@@ -59,7 +59,12 @@ v30's dragged the MBR consensus down (42.30 < 42.42). A useful ensemble needs *d
 models of *comparable* quality → the v30+NLLB ensemble (different architecture) is the
 one worth trying. (`scripts/decoding/{gen_candidates_vllm,ensemble_mbr_rerank}.py`.)
 
+**Verified:** ensemble predictions recompute to 43.734, 0 empty, pred/ref char-length
+61.8/57.6 (not degenerate), translations are genuine fluent Chanka Quechua — real result.
+
 ## In progress / planned levers (toward 45)
+- **NLLB round-2** on 323k corpus (124k aggregate + 198.5k v30-forward-translated synthetic,
+  0 leakage) — training now. Then re-dump candidates and re-run the v30+NLLB ensemble.
 - **NLLB-1.3B + LoRA** (BSC-2024-winner recipe: r=256/α=512, lr 2e-4 inverse-sqrt,
   apostrophe suppression) on a cleaned 124k aggregate (in-domain raw + FLORES-200
   dev/devtest + cleaned hackathon-pln-es, 0 leakage). Standalone + ensemble member.
