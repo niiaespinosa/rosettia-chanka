@@ -12,11 +12,18 @@
 |---|---|---|---|
 | v30 greedy (prior SOTA) | 40.55 | — | — |
 | v30 + ChrF-MBR n=32 (T=0.5) | 42.21 | +1.66 | decode only |
-| **v30 + ChrF-MBR n=64 (T=0.5)** | **42.42** | **+1.87** | decode only |
+| v30 + ChrF-MBR n=64 (raw, no dedup) | 42.42 | +1.87 | decode only |
+| **v30 + ChrF-MBR n=64, DEDUP + greedy-in-pool** | **42.93** | **+2.38** | decode only |
 | ensemble[v30,v32] MBR (pool=64.6) | 42.30 | +1.75 | decode only |
 
-**Current SOTA: 42.42 ChrF**, achieved with zero additional training — pure
+**Current SOTA: 42.93 ChrF**, achieved with zero additional training — pure
 reference-free Minimum-Bayes-Risk decoding (ChrF utility) on the existing v30 model.
+
+### MBR detail: dedup the candidate pool before consensus (+0.5)
+Raw MBR over all 64 samples = 42.42. Deduplicating to the ~28.5 *unique* hypotheses
+(and adding the greedy hypothesis) = **42.93**. Duplicate samples otherwise inflate the
+ChrF-centroid toward high-probability-but-not-best modes; equal-weighting the unique
+support set is a cleaner consensus estimate. `ensemble_mbr_rerank.py` does this by default.
 
 ## Key findings
 
