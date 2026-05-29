@@ -38,7 +38,8 @@ def main():
     inputs = [f"{args.tgt_tag} {s}" for s in src]
 
     tok = AutoTokenizer.from_pretrained(args.model_id)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).cuda()
+    # MADLAD/T5 is numerically unstable in bf16/fp16 -> use fp32 (fits on 80GB).
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_id, torch_dtype=torch.float32).cuda()
     model.eval()
 
     bad_words_ids = None
