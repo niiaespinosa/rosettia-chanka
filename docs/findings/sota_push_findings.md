@@ -15,9 +15,19 @@
 | v30 + ChrF-MBR n=64 (raw, no dedup) | 42.42 | +1.87 | decode only |
 | **v30 + ChrF-MBR n=64, DEDUP + greedy-in-pool** | **42.93** | **+2.38** | decode only |
 | ensemble[v30,v32] MBR (pool=64.6) | 42.30 | +1.75 | decode only |
+| NLLB-1.3B standalone (beam5, apostrophe-suppressed) | 39.46 | — | 1 NLLB train |
+| **ensemble[v30 + NLLB] dedup-MBR (pool=76.8)** | **43.73** | **+3.18** | +1 NLLB train |
 
-**Current SOTA: 42.93 ChrF**, achieved with zero additional training — pure
-reference-free Minimum-Bayes-Risk decoding (ChrF utility) on the existing v30 model.
+**Current SOTA: 43.73 ChrF** (v30 ⊕ NLLB-1.3B cross-architecture dedup-MBR).
+v30-alone dedup-MBR is 42.93 (zero training); adding a *diverse, comparable-quality*
+NLLB-1.3B (39.46 standalone) as a second candidate source lifts the consensus +0.80.
+
+### Why the cross-architecture ensemble works (and the Qwen-sibling one didn't)
+MBR consensus rewards candidate *diversity at comparable quality*. The v32 sibling
+(34.5) was too weak → dragged the centroid down (42.30 < 42.42). NLLB-1.3B (39.46) is
+a different architecture (encoder-decoder, real quy pretraining) at v30-comparable
+quality → its candidates cover different correct phrasings, enriching the consensus
+pool (76.8 unique/source) and lifting ChrF to 43.73.
 
 ### MBR detail: dedup the candidate pool before consensus (+0.5)
 Raw MBR over all 64 samples = 42.42. Deduplicating to the ~28.5 *unique* hypotheses
