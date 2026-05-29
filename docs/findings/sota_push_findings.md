@@ -18,14 +18,14 @@
 | NLLB-1.3B r1 standalone (beam5, apostrophe-suppressed) | 39.46 | — | 1 NLLB train |
 | **ensemble[v30 + NLLB-r1] dedup-MBR (pool=76.8)** | **43.73** | **+3.18** | +1 NLLB train |
 | NLLB-1.3B **r2** (synthetic-augmented) standalone (beam5) | 42.95 | — | +synth train |
-| **NLLB-r2 + dedup-MBR (self, pool=38.9)** | **44.42** | **+3.87** | +synth train |
-| ensemble[v30 + NLLB-r2] dedup-MBR | *running* | — | — |
+| NLLB-r2 + dedup-MBR (self, pool=38.9) | 44.42 | +3.87 | +synth train |
+| **ensemble[v30 + NLLB-r2] dedup-MBR** | **44.97** | **+4.42** | +synth train |
 | ensemble[v30 + NLLB-r2 + MADLAD-400-3B] dedup-MBR | *running* | — | — |
 
-**Current SOTA: 44.42 ChrF** (NLLB-r2 synthetic-augmented + self dedup-MBR). The
-synthetic round made NLLB-r2 strong enough that NLLB-alone+MBR now tops the earlier
-cross-architecture ensemble; the v30+NLLB-r2 and 3-way MADLAD ensembles (running)
-are expected to push further toward/past 45.
+**Current SOTA: 44.97 ChrF** (v30 ⊕ NLLB-r2 cross-architecture dedup-MBR) — +4.42 over
+the prior 40.55 and just under 45. The synthetic-trained NLLB-r2 (44.42 self-MBR) made
+the cross-architecture ensemble jump 43.73 → 44.97; the 3-way MADLAD ensemble (running)
+is the shot to clear 45.
 v30-alone dedup-MBR is 42.93 (zero training); adding a *diverse, comparable-quality*
 NLLB-1.3B (39.46 standalone) as a second candidate source lifts the consensus +0.80.
 
