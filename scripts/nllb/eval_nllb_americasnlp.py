@@ -7,8 +7,11 @@ from pathlib import Path
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model-id", default="facebook/nllb-200-3.3B")
+    ap.add_argument("--model-id", default="facebook/nllb-200-1.3B")
     ap.add_argument("--adapter", default=None, help="LoRA adapter dir (optional)")
+    ap.add_argument("--suppress-apostrophe", action="store_true", default=True,
+                    help="forbid apostrophe generation (Ayacucho quy has no glottalization; free ChrF gain)")
+    ap.add_argument("--allow-apostrophe", dest="suppress_apostrophe", action="store_false")
     ap.add_argument("--test-es", default="docs/references/americasnlp_test/2021_test.es")
     ap.add_argument("--test-quy", default="docs/references/americasnlp_test/2021_test.quy")
     ap.add_argument("--src-lang", default="spa_Latn")
@@ -34,13 +37,26 @@ def main():
     model.eval()
     bos = tok.convert_tokens_to_ids(args.tgt_lang)
 
+    # forbid apostrophe-bearing tokens (Ayacucho quy reference orthography has none)
+    bad_words_ids = None
+    if args.suppress_apostrophe:
+        apos_chars = ["'", "’", "ʼ"]  # ' ' ʼ
+        bad = set()
+        vocab = tok.get_vocab()
+        for t, tid in vocab.items():
+            piece = t.replace("▁", "")  # strip sentencepiece marker
+            if any(c in piece for c in apos_chars):
+                bad.add(tid)
+        bad_words_ids = [[i] for i in sorted(bad)] or None
+        print(f"suppressing {len(bad)} apostrophe-bearing tokens", flush=True)
+
     preds = []
     for i in range(0, len(src), args.batch_size):
         batch = src[i:i+args.batch_size]
         enc = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256).to("cuda")
         with torch.no_grad():
             out = model.generate(**enc, forced_bos_token_id=bos, num_beams=args.num_beams,
-                                 max_new_tokens=args.max_new)
+                                 max_new_tokens=args.max_new, bad_words_ids=bad_words_ids)
         preds.extend(tok.batch_decode(out, skip_special_tokens=True))
         print(f"{min(i+args.batch_size,len(src))}/{len(src)}", flush=True)
 
