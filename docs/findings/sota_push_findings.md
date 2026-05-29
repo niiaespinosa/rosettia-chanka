@@ -1,0 +1,60 @@
+# Pushing past v30: the AmericasNLP 2021 spa→quy SOTA push
+
+**Benchmark:** AmericasNLP 2021 Spanish→Quechua (quy) test, 1003 lines, zero leakage.
+**Official metric:** ChrF, sacrebleu `word_order=0` (NOT ChrF++/word_order=2).
+**Prior best (ours):** v30 = 40.55 (greedy). This already meets/beats published systems
+(Sheffield 2023 NLLB-3.3B = 34.01 ChrF w0; Helsinki 2021 = 39.40; BSC 2024 winner =
+38.21 *ChrF++*). So "much better" requires stacking decoding/data levers, not just retraining.
+
+## Headline result
+
+| Approach | ChrF (w0) | Δ vs 40.55 | Cost |
+|---|---|---|---|
+| v30 greedy (prior SOTA) | 40.55 | — | — |
+| v30 + ChrF-MBR n=32 (T=0.5) | 42.21 | +1.66 | decode only |
+| **v30 + ChrF-MBR n=64 (T=0.5)** | **42.42** | **+1.87** | decode only |
+| ensemble[v30,v32] MBR (pool=64.6) | 42.30 | +1.75 | decode only |
+
+**Current SOTA: 42.42 ChrF**, achieved with zero additional training — pure
+reference-free Minimum-Bayes-Risk decoding (ChrF utility) on the existing v30 model.
+
+## Key findings
+
+### 1. The MINEDU normalization HURTS this benchmark (orthography is a red herring)
+The AmericasNLP test references are in the original (un-normalized) orthography — 44%
+of ref lines contain `e`/`o`, the very vowels MINEDU normalization maps to `i`/`u`.
+*However*, re-scoring v34a's predictions proved the orthographic penalty is only
+**~0.4 ChrF** when made consistent (both-norm 38.36 vs official 37.93). The real reason
+the 109k normalized in-domain corpus (v34a, 37.9) underperformed v30's 1929 *curated*
+pairs (40.55) is **data noise (JW300-derived bulk) + recipe**, not orthography.
+→ Bulk noisy in-domain data is a dead end here; curated data + good decoding wins.
+(See `scripts/normalizer/score_orthography_penalty.py`.)
+
+### 2. ChrF-MBR is the cheapest, biggest single lever (+1.87, no training)
+Sample N candidates (T=0.5, top_p=0.95), pick the one maximizing mean pairwise
+sentence-ChrF (consensus/centroid). Reference-free, language-agnostic, directly
+optimizes the eval metric. n=32→42.21, n=64→42.42 (diminishing: +0.21 for 2× compute).
+ChrF utility (NOT COMET — XLM-R lacks quy). (`scripts/decoding/mbr_chrf_vllm.py`.)
+
+### 3. Qwen-sibling ensembling does NOT help (no comparable-quality diverse model)
+v32 greedy is only 34.5 (the v32 Nouman-data regression). Pooling its candidates with
+v30's dragged the MBR consensus down (42.30 < 42.42). A useful ensemble needs *diverse*
+models of *comparable* quality → the v30+NLLB ensemble (different architecture) is the
+one worth trying. (`scripts/decoding/{gen_candidates_vllm,ensemble_mbr_rerank}.py`.)
+
+## In progress / planned levers (toward 45)
+- **NLLB-1.3B + LoRA** (BSC-2024-winner recipe: r=256/α=512, lr 2e-4 inverse-sqrt,
+  apostrophe suppression) on a cleaned 124k aggregate (in-domain raw + FLORES-200
+  dev/devtest + cleaned hackathon-pln-es, 0 leakage). Standalone + ensemble member.
+- **Ensemble v30 + NLLB → MBR** (true architectural diversity).
+- **Target-side synthetic data** (forward-translate abundant Spanish mono → quy; BSC's
+  single biggest lever, +2.9 ChrF++), then retrain NLLB and re-MBR.
+
+## Reproduce
+```
+# best single-model SOTA (42.42)
+python scripts/decoding/gen_candidates_vllm.py \
+  --base outputs/merged_full_models/20260527-v30b-9b-broad-chanka-expanded-merged \
+  --n-samples 64 --temperature 0.5 --out-candidates outputs/eval_mbr/v30_cands_n64.jsonl
+# -> ChrF_self_mbr 42.42
+```
