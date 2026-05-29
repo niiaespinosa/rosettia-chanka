@@ -15,10 +15,14 @@
 | v30 + ChrF-MBR n=64 (raw, no dedup) | 42.42 | +1.87 | decode only |
 | **v30 + ChrF-MBR n=64, DEDUP + greedy-in-pool** | **42.93** | **+2.38** | decode only |
 | ensemble[v30,v32] MBR (pool=64.6) | 42.30 | +1.75 | decode only |
-| NLLB-1.3B standalone (beam5, apostrophe-suppressed) | 39.46 | — | 1 NLLB train |
-| **ensemble[v30 + NLLB] dedup-MBR (pool=76.8)** | **43.73** | **+3.18** | +1 NLLB train |
+| NLLB-1.3B r1 standalone (beam5, apostrophe-suppressed) | 39.46 | — | 1 NLLB train |
+| **ensemble[v30 + NLLB-r1] dedup-MBR (pool=76.8)** | **43.73** | **+3.18** | +1 NLLB train |
+| NLLB-1.3B **r2** (synthetic-augmented) standalone (beam5) | **42.95** | — | +synth train |
+| ensemble[v30 + NLLB-r2] dedup-MBR | *running* | — | — |
+| ensemble[v30 + NLLB-r2 + MADLAD-400-3B] dedup-MBR | *running* | — | — |
 
-**Current SOTA: 43.73 ChrF** (v30 ⊕ NLLB-1.3B cross-architecture dedup-MBR).
+**Current SOTA: 43.73 ChrF** (v30 ⊕ NLLB-1.3B cross-architecture dedup-MBR);
+the v30+NLLB-r2 and 3-way MADLAD ensembles (running) are expected to beat it.
 v30-alone dedup-MBR is 42.93 (zero training); adding a *diverse, comparable-quality*
 NLLB-1.3B (39.46 standalone) as a second candidate source lifts the consensus +0.80.
 
@@ -62,9 +66,25 @@ one worth trying. (`scripts/decoding/{gen_candidates_vllm,ensemble_mbr_rerank}.p
 **Verified:** ensemble predictions recompute to 43.734, 0 empty, pred/ref char-length
 61.8/57.6 (not degenerate), translations are genuine fluent Chanka Quechua — real result.
 
+### Target-side synthetic data (forward-translation distillation) — big lever for NLLB
+Forward-translated 200k abundant Spanish monolingual (OPUS-100 + News-Commentary + C4,
+leakage-guarded) into quy with v30 greedy (teacher); kept 198,503 pairs after
+length-ratio filtering. Added to the 124k real aggregate → 323k corpus → NLLB round-2.
+Result: **NLLB-1.3B standalone 39.46 → 42.95 (+3.49)** — synthetic data nearly closed
+the gap to v30. This is sequence-level knowledge distillation (NOT backtranslation;
+Spanish is the abundant side). `scripts/decoding/forward_translate_synth.py`,
+`scripts/nllb/build_nllb_v2_corpus.py`.
+- *Caveat:* self-distillation makes the student *approach* the teacher (v30 ~40-level),
+  not surpass it → NLLB-r2 converged near v30. To exceed: use a stronger teacher for the
+  synthetic targets (v30+MBR 42.9 / ensemble 43.7 outputs / Google-Translate quy).
+
 ## In progress / planned levers (toward 45)
-- **NLLB round-2** on 323k corpus (124k aggregate + 198.5k v30-forward-translated synthetic,
-  0 leakage) — training now. Then re-dump candidates and re-run the v30+NLLB ensemble.
+- **v30 + NLLB-r2 ensemble** and **3-way v30+NLLB-r2+MADLAD-400-3B ensemble** (running).
+- **MADLAD-400-3B** (T5 MT, real quy, diverse arch) and **ByT5** (byte-level, tokenizer-free,
+  ChrF-aligned, maximally orthogonal errors) as further ensemble members.
+- **Iterative distillation:** regenerate synthetic targets with the *ensemble* (43.7) as
+  teacher → retrain → re-ensemble (push student past current teacher).
+- **Qwen CPT on quy monolingual** (5M-token corpus ready) — deprioritized for now.
 - **NLLB-1.3B + LoRA** (BSC-2024-winner recipe: r=256/α=512, lr 2e-4 inverse-sqrt,
   apostrophe suppression) on a cleaned 124k aggregate (in-domain raw + FLORES-200
   dev/devtest + cleaned hackathon-pln-es, 0 leakage). Standalone + ensemble member.
