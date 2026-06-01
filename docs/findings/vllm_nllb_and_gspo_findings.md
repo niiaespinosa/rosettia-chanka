@@ -74,10 +74,30 @@ GRPOTrainer and the project's GSPO infra are decoder-only):
 - Throughput-maxed for HF generate: bf16, big rollout batch (B48×G8=384/step),
   short `max_new=64`, LoRA. ~24 rollouts/s, ~14 s/step.
 
-**Status: running.** Smoke test passed end-to-end (reward/advantage/loss/backward).
-Per-batch reward is noisy (different sentences each step) — the real signal is
-evaluating a checkpoint on the AmericasNLP test (greedy + dedup-MBR) vs NLLB-r2's
-42.95 / 44.42. Pending.
+**Status: SUCCESS — new SOTA.** Trained 1200+ steps via the in-process vLLM-rollout
+loop (77 rollouts/s, 3.2× HF) on the clean held-out Ayacucho data. Held-out reward
+climbed **40.2 → ~51** ChrF. On the AmericasNLP 2021 test:
+
+| | ChrF (w0) | vs |
+|---|---|---|
+| NLLB-r2 (pre-RL) standalone beam5 | 42.95 | — |
+| **GSPO-NLLB standalone beam5** | **45.49** | **+2.54 from RL** |
+
+**45.49 from a single model already beats the prior 45.01 decoding/ensemble SOTA.**
+Outputs verified genuine, fluent Chanka (not ChrF-gaming) — e.g. "No sé por qué
+sucedió eso" → "Manam yachanichu imarayku chay pasarqa". GSPO self dedup-MBR and the
+v30+GSPO ensemble (computing) are expected to push higher still.
+
+### Validity safeguards (important)
+- **No contamination:** RL ran on held-out real Ayacucho pairs that NLLB-r2 *never*
+  trained on (deduped against its exact 323k training corpus), and NEVER on the
+  AmericasNLP test. So the +2.54 is genuine generalization, not memorized-reference
+  reproduction.
+- **Right dialect:** RL data filtered to Ayacucho/Chanka quy only (dropped ~32k
+  Cuzco/Ancash/Kichwa rows) — rewarding wrong-dialect refs would have mis-steered it.
+- **Weight-sync correctness:** the PEFT `.base_layer.` naming bug initially synced a
+  half-base Frankenstein into vLLM (reward stuck ~22); fixed → reward 40+ = true
+  NLLB-r2 quality.
 
 **Honest caveats:** (a) RL reward (ChrF) overlaps with what MBR already optimizes at
 decode time → marginal gain possible; unique value is sharpening the candidate pool
