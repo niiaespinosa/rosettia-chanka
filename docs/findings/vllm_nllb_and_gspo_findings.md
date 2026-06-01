@@ -81,9 +81,25 @@ climbed **40.2 → ~51** ChrF. On the AmericasNLP 2021 test:
 | | ChrF (w0) | vs |
 |---|---|---|
 | NLLB-r2 (pre-RL) standalone beam5 | 42.95 | — |
-| **GSPO-NLLB standalone beam5** | **45.49** | **+2.54 from RL** |
+| **GSPO-NLLB (ckpt-1200) standalone beam5** | **45.49** | **+2.54 from RL** |
+| GSPO-NLLB + dedup-MBR (self) | 46.33 | +0.84 decode |
+| **ensemble[v30 + GSPO-NLLB] dedup-MBR** | **46.44** | **+5.89 vs 40.55 baseline** |
 
-**45.49 from a single model already beats the prior 45.01 decoding/ensemble SOTA.**
+**45.49 from a single model already beats the prior 45.01 decoding/ensemble SOTA; the
+full stack reaches 46.44.** (v30 adds little now — GSPO-NLLB is strong enough that its
+own self-MBR 46.33 ≈ the v30 ensemble 46.44.)
+
+### Learning curve + continuing
+Held-out reward (windowed) climbed monotonically and was STILL RISING at the stop:
+42.0 (step 0-99) → 45.5 (200) → 47.1 (400) → 48.6 (600) → 50.3 (1000) → 51.3 (1100-1199).
+Not plateaued → resumed from ckpt-1200 for up to 3000 more steps to find the ceiling.
+
+### Methodology rigor
+- Test (AmNLP 2021) NEVER trained on — single final eval.
+- Checkpoint selection now uses a **held-out val split** (2,000 rows carved from the RL
+  set, EXCLUDED from the resume's training) — `clean_chanka/rl_val_split.parquet`
+  (+ rl_val.es/.quy). Best-on-val checkpoint → one test eval. Reported 45.49/46.44 used
+  the principled latest/highest-reward checkpoint (single test eval, not cherry-picked).
 Outputs verified genuine, fluent Chanka (not ChrF-gaming) — e.g. "No sé por qué
 sucedió eso" → "Manam yachanichu imarayku chay pasarqa". GSPO self dedup-MBR and the
 v30+GSPO ensemble (computing) are expected to push higher still.

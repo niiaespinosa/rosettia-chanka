@@ -107,13 +107,16 @@ def main():
         policy.merge_adapter()
         sd = {}
         for name, p in policy.named_parameters():
-            # strip PEFT wrapper prefix -> HF checkpoint names (model.encoder..., lm_head...)
-            n = name.replace("base_model.model.", "")
-            if ".lora_" in n or "lora_A" in n or "lora_B" in n:
+            if "lora_" in name:  # skip LoRA A/B (deltas already merged into base_layer)
                 continue
+            # PEFT wraps target modules: strip the wrapper prefix AND the
+            # ".base_layer." infix so names match the HF checkpoint
+            # (model.encoder...q_proj.weight, lm_head.weight, ...).
+            n = name.replace("base_model.model.", "").replace(".base_layer.", ".")
             sd[n] = p.detach()
-        vmodel.load_weights(list(sd.items()))
+        loaded = vmodel.load_weights(list(sd.items()))
         policy.unmerge_adapter()
+        return len(sd), (len(loaded) if loaded is not None else -1)
 
     df = pl.read_parquet(args.train_parquet)
     data = [(str(r[args.src_field]).strip(), str(r[args.tgt_field]).strip())
