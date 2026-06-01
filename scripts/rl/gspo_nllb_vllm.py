@@ -61,7 +61,10 @@ def make_reward(kind):
         w = h.split()
         return 0.0 if len(w) < 2 else (1.0 - len(set(w)) / len(w))
 
-    if kind == "chrf":
+    # round-trip variants use plain ChrF as their reference-anchored base term;
+    # the adequacy (round-trip) and anti-copy terms are added in the train loop
+    # (they need the SOURCE Spanish + a reverse quy->spa model, not just h,r).
+    if kind in ("chrf", "chrf_roundtrip", "chrf_rt_copy"):
         return lambda h, r: chrf(h, r)
     if kind == "chrfpp":
         return lambda h, r: sacrebleu.sentence_chrf(h, [r], word_order=2).score
@@ -70,6 +73,13 @@ def make_reward(kind):
     if kind == "chrf_rep":
         return lambda h, r: chrf(h, r) - 30.0 * reppen(h)
     raise ValueError(kind)
+
+
+def copy_rate(hyp, src):
+    """Fraction of hypothesis word-types that are verbatim Spanish source words —
+    the round-trip exploit (echo the source -> trivially perfect round-trip)."""
+    h = set(hyp.lower().split())
+    return 0.0 if not h else len(h & set(src.lower().split())) / len(h)
 
 
 def main():
@@ -89,9 +99,16 @@ def main():
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--kl-coef", type=float, default=0.04)
     ap.add_argument("--reward-type", default="chrf",
-                    choices=["chrf", "chrfpp", "chrf_brevity", "chrf_rep"],
+                    choices=["chrf", "chrfpp", "chrf_brevity", "chrf_rep",
+                             "chrf_roundtrip", "chrf_rt_copy"],
                     help="RL reward: chrf=sentence-ChrF(w0); chrfpp=ChrF++(w2); "
-                         "chrf_brevity=ChrF - 20*|len_ratio-1|; chrf_rep=ChrF - 30*rep_rate")
+                         "chrf_brevity=ChrF - 20*|len_ratio-1|; chrf_rep=ChrF - 30*rep_rate; "
+                         "chrf_roundtrip=ChrF + rt_coef*ChrF(reverse(h),src); "
+                         "chrf_rt_copy=chrf_roundtrip - copy_coef*100*source_copy_rate")
+    ap.add_argument("--reverse-adapter", default=None,
+                    help="quy->spa reverse model for round-trip reward; omit = NLLB zero-shot base")
+    ap.add_argument("--rt-coef", type=float, default=0.5, help="weight on round-trip adequacy ChrF")
+    ap.add_argument("--copy-coef", type=float, default=0.3, help="weight on anti-copy penalty (x100*rate)")
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--top-p", type=float, default=0.95)
     ap.add_argument("--max-src", type=int, default=128)
@@ -117,6 +134,13 @@ def main():
     def load_policy(trainable):
         m = AutoModelForSeq2SeqLM.from_pretrained(args.base, torch_dtype=torch.bfloat16)
         m = PeftModel.from_pretrained(m, args.init_adapter, is_trainable=trainable)
+        return m.to(dev)
+
+    def load_policy_base(adapter):
+        """Base NLLB, optionally + an arbitrary (frozen) adapter. adapter=None => zero-shot."""
+        m = AutoModelForSeq2SeqLM.from_pretrained(args.base, torch_dtype=torch.bfloat16)
+        if adapter:
+            m = PeftModel.from_pretrained(m, adapter)
         return m.to(dev)
 
     policy = load_policy(True); policy.train()
@@ -155,6 +179,33 @@ def main():
             if str(r[args.src_field]).strip() and str(r[args.tgt_field]).strip()]
     random.shuffle(data)
     reward_fn = make_reward(args.reward_type)
+    rt_on = args.reward_type in ("chrf_roundtrip", "chrf_rt_copy")
+    copy_on = args.reward_type == "chrf_rt_copy"
+
+    # Reverse quy->spa model for round-trip adequacy. The comparison (reverse output
+    # vs original source) happens entirely in SPANISH, so ChrF is reliable there.
+    revm = rtok = None
+    if rt_on:
+        revm = load_policy_base(args.reverse_adapter)
+        revm.eval()
+        rtok = AutoTokenizer.from_pretrained(args.base, src_lang=args.tgt_lang, tgt_lang=args.src_lang)
+        rev_fbos = rtok.convert_tokens_to_ids(args.src_lang)
+        print(f"[{time.strftime('%H:%M:%S')}] reverse model loaded "
+              f"({'zero-shot base' if not args.reverse_adapter else args.reverse_adapter}) "
+              f"| rt_coef={args.rt_coef} copy_coef={args.copy_coef}", flush=True)
+
+        @torch.no_grad()
+        def reverse_translate(quy_texts, bs=128):
+            outs = []
+            for i in range(0, len(quy_texts), bs):
+                chunk = quy_texts[i:i + bs]
+                enc = rtok(chunk, return_tensors="pt", padding=True, truncation=True,
+                           max_length=args.max_new + 8).to(dev)
+                g = revm.generate(**enc, forced_bos_token_id=rev_fbos,
+                                  num_beams=1, max_new_tokens=args.max_src)
+                outs.extend(rtok.batch_decode(g, skip_special_tokens=True))
+            return outs
+
     print(f"RL data: {len(data)} real pairs | G={args.group_size} B={args.prompt_batch} | reward={args.reward_type}", flush=True)
 
     def seq_logprobs(model, src_ids, src_mask, gen_ids):
@@ -196,8 +247,18 @@ def main():
                 gen = list(c.token_ids)
                 texts.append(tok.decode(gen, skip_special_tokens=True))
                 gen_seqs.append([dec_start, bos] + gen)
-        rewards = torch.tensor([reward_fn(texts[i], refs[i // G])
-                                for i in range(len(texts))], dtype=torch.float32)
+        base_r = [reward_fn(texts[i], refs[i // G]) for i in range(len(texts))]
+        rt_mean = cp_mean = 0.0
+        if rt_on:
+            # round-trip: reverse-translate each quy candidate -> spa, ChrF vs the
+            # ORIGINAL Spanish source (Spanish-Spanish comparison => reliable).
+            backs = reverse_translate(texts)
+            rt = [sacrebleu.sentence_chrf(backs[i], [srcs[i // G]]).score for i in range(len(texts))]
+            cp = [copy_rate(texts[i], srcs[i // G]) for i in range(len(texts))] if copy_on else [0.0] * len(texts)
+            base_r = [base_r[i] + args.rt_coef * rt[i] - (args.copy_coef * 100.0 * cp[i] if copy_on else 0.0)
+                      for i in range(len(texts))]
+            rt_mean = sum(rt) / len(rt); cp_mean = sum(cp) / len(cp)
+        rewards = torch.tensor(base_r, dtype=torch.float32)
         r = rewards.view(-1, G)
         adv = ((r - r.mean(1, keepdim=True)) / (r.std(1, keepdim=True) + 1e-4)).view(-1).to(dev)
 
@@ -234,7 +295,8 @@ def main():
         opt.step()
 
         if step % 5 == 0 or step == 1:
-            print(f"step {step} | reward(ChrF) mean={rewards.mean():.2f} max={r.max(1).values.mean():.2f} "
+            extra = f" | rt={rt_mean:.1f} copy={cp_mean:.2f}" if rt_on else ""
+            print(f"step {step} | reward mean={rewards.mean():.2f} max={r.max(1).values.mean():.2f}{extra} "
                   f"| loss={total:.4f} | roll={roll_s:.1f}s tot={time.time()-t0:.1f}s "
                   f"| {len(texts)/roll_s:.0f} rollouts/s", flush=True)
         if step % args.save_steps == 0:
