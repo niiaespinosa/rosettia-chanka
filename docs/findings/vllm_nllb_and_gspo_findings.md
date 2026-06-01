@@ -124,3 +124,58 @@ adapter) — not yet built; current loop uses HF generate.
 
 **Next:** eval GSPO checkpoints on AmNLP; if the RL'd NLLB beats 42.95 standalone,
 fold it into the v30+NLLB ensemble for a push past 45.01.
+
+---
+
+## Reward design study (2026-06-01) — what makes a good GSPO-MT reward
+
+Clean 200-step ablations from NLLB-r2 (G=8, identical settings, ranked by held-out
+**val ChrF w0**; never test). Baseline NLLB-r2 (no RL) val = **46.98**.
+
+| reward | val ChrF (w0) | note |
+|---|---|---|
+| **chrf** (sentence-ChrF w0) | **50.05** | metric-aligned; the winner |
+| chrf_brevity (−20·\|len_ratio−1\|) | 50.05 | tie — NLLB-r2 already length-calibrated, penalty inert |
+| chrfpp (ChrF++ w2) | 49.94 | reward should match the *eval* metric (w0), not w2 |
+| chrf_rt_copy (+0.5·roundtrip −0.3·copy) | 49.63 | round-trip reward — see below |
+
+**Takeaway 1: plain ChrF wins; +3.07 over baseline in just 200 steps.** Reshaping the
+surface metric (length/repetition penalties) doesn't help — NLLB-r2 is already well
+calibrated, so those terms are inert. Match the reward to the eval metric (w0 not w2).
+
+### Round-trip / back-translation reward — investigated, falsified (negative result)
+Idea: translate candidate quy→spa with a reverse model, score adequacy by comparing
+that Spanish to the *original Spanish source* — the whole comparison lives in Spanish
+(high-resource) so ChrF/embeddings are reliable; no quy QE needed. Reference-free,
+should resist ChrF-surface-gaming. **Paired with an anti-copy penalty** (round-trip
+alone has a trivial exploit: echo the source → perfect round-trip).
+
+We **gated it before committing** a long run, via a cheap correlation check
+(`scripts/rl/validate_roundtrip_reward.py`): does round-trip ChrF *rank* candidates
+the way the true reference does? The metric that matters for GSPO is the
+**within-source (per-group) Spearman**, since advantages are group-relative.
+
+| reverse model | within-src Spearman | top-1 agree (vs 12.5% random) |
+|---|---|---|
+| NLLB zero-shot | 0.16 | 14.5% |
+| trained quy→spa LoRA, ckpt-3k/6k/9k | 0.22 / 0.28 / 0.24 | 20% / 20.5% / 24% |
+
+Signal is **real but moderate and plateaus ~0.25** (better reverse model → better
+signal, but it tops out well under the ~0.3 confidence bar), and it is **~0.29
+globally correlated with ChrF itself → partly redundant**. The copy-exploit was
+empirically **absent** (copy-rate ~0.01; Spearman(copy, round-trip) ~0). Ground-truth
+GSPO ablation confirmed the proxy's warning: **chrf_rt_copy val 49.63 vs chrf 50.05
+(−0.43)** — adding a noisy, partly-redundant adequacy term to an already-strong clean
+ChrF reward dilutes the gradient rather than adding orthogonal info, and costs ~75%
+more compute/step (the reverse pass). **Conclusion: round-trip does not beat plain
+ChrF for this pair/setup.** Cheap to falsify because we gated it.
+
+**Silver lining:** the trained reverse quy→spa model
+(`outputs/nllb_reverse_quy2spa_20260601/checkpoint-9000`) is a real ~1-epoch
+back-translation model — its useful role is **data augmentation** (back-translate the
+~175k quy monolingual → synthetic (spa,quy) pairs, Edunov-style), not the reward.
+
+**Method note (reusable):** before wiring any new RL reward into a long run, gate it
+with the within-source-Spearman / top-1-agreement proxy on val candidates. It ruled
+out the zero-shot reverse (0.16 ≈ noise) and correctly predicted the trained-reverse
+reward would not help — saving a 1200-step run each time.
