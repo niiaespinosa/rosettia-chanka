@@ -171,20 +171,21 @@ def main():
         enc = tok(srcs, return_tensors="pt", padding=True, truncation=True, max_length=args.max_src).to(dev)
         src_ids = enc.input_ids.repeat_interleave(G, 0); src_mask = enc.attention_mask.repeat_interleave(G, 0)
 
+        # Only the FROZEN ref needs a no-grad pass. Single inner-epoch GSPO means
+        # old_logprob == current policy, so we reuse the update pass's lp.detach()
+        # instead of a separate policy forward (quality-identical, ~1/3 fewer fwds).
         with torch.no_grad():
-            old_lp, lens, ref_lp = [], [], []
+            ref_lp = []
             for s in range(0, gen_ids.size(0), args.micro_batch):
                 sl = slice(s, s + args.micro_batch)
-                lp, L = seq_logprobs(policy, src_ids[sl], src_mask[sl], gen_ids[sl])
-                old_lp.append(lp); lens.append(L)
                 rlp, _ = seq_logprobs(ref, src_ids[sl], src_mask[sl], gen_ids[sl]); ref_lp.append(rlp)
-            old_lp = torch.cat(old_lp); ref_lp = torch.cat(ref_lp)
+            ref_lp = torch.cat(ref_lp)
 
         opt.zero_grad(); total = 0.0
         for s in range(0, gen_ids.size(0), args.micro_batch):
             sl = slice(s, s + args.micro_batch)
             lp, L = seq_logprobs(policy, src_ids[sl], src_mask[sl], gen_ids[sl])
-            ratio = torch.exp((lp - old_lp[sl]) / L)
+            ratio = torch.exp((lp - lp.detach()) / L)  # ==1; gradient flows via lp
             a = adv[sl]
             surr = torch.min(ratio * a, torch.clamp(ratio, 1 - args.clip, 1 + args.clip) * a)
             kl = (lp - ref_lp[sl]) / L
