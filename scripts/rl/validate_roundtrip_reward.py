@@ -105,37 +105,46 @@ def main():
     back = translate(rev, tok, cands, "quy_Latn", "spa_Latn", 1, 1.0, args.max_new)
     del rev; torch.cuda.empty_cache()
 
-    # 3) per-candidate signals
-    chrf_ref, chrf_rt, copies = [], [], []
-    for i, c in enumerate(cands):
-        s_i = i // G
-        chrf_ref.append(chrf(c, ref[s_i]))      # TRUE quality (vs held-out reference)
-        chrf_rt.append(chrf(back[i], src[s_i]))  # round-trip adequacy (Spanish-Spanish)
-        copies.append(copy_rate(c, src[s_i]))
+    # 3) per-candidate signals. The round-trip score (Spanish-Spanish) can be read
+    # by several dependency-free metrics — we report all so one run tells us both
+    # whether the reverse model is good AND which comparison metric ranks best.
+    def bleu(h, r):
+        return sacrebleu.sentence_bleu(h, [r]).score
 
-    # 4) correlations — within-source is what GSPO actually uses
-    glob = spearman(chrf_rt, chrf_ref)
-    within, top1_hits = [], 0
-    for s_i in range(len(src)):
-        sl = slice(s_i * G, s_i * G + G)
-        cr, ct = chrf_ref[sl], chrf_rt[sl]
-        if len(set(ct)) > 1 and len(set(cr)) > 1:
-            within.append(spearman(ct, cr))
-        # does round-trip pick the same best candidate as the reference?
-        if cr and ct and max(range(G), key=lambda k: ct[k]) == max(range(G), key=lambda k: cr[k]):
-            top1_hits += 1
+    def chrfpp(h, r):
+        return sacrebleu.sentence_chrf(h, [r], word_order=2).score
+
+    chrf_ref = [chrf(cands[i], ref[i // G]) for i in range(len(cands))]   # TRUE quality
+    copies = [copy_rate(cands[i], src[i // G]) for i in range(len(cands))]
+    rt_metrics = {
+        "ChrF":   [chrf(back[i], src[i // G]) for i in range(len(cands))],
+        "ChrF++": [chrfpp(back[i], src[i // G]) for i in range(len(cands))],
+        "BLEU":   [bleu(back[i], src[i // G]) for i in range(len(cands))],
+    }
+
+    def rank_quality(rt):
+        """within-source Spearman vs reference ChrF + top-1 agreement, for one metric."""
+        within, top1 = [], 0
+        for s_i in range(len(src)):
+            sl = slice(s_i * G, s_i * G + G)
+            cr, ct = chrf_ref[sl], rt[sl]
+            if len(set(ct)) > 1 and len(set(cr)) > 1:
+                within.append(spearman(ct, cr))
+            if cr and ct and max(range(G), key=lambda k: ct[k]) == max(range(G), key=lambda k: cr[k]):
+                top1 += 1
+        return statistics.mean(within), len(within), top1
 
     print("\n===== ROUND-TRIP REWARD VALIDATION =====")
-    print(f"global Spearman(round-trip ChrF, reference ChrF) = {glob:.3f}")
-    print(f"mean WITHIN-SOURCE Spearman (what GSPO ranks on)  = {statistics.mean(within):.3f}  (n={len(within)} usable groups)")
-    print(f"top-1 agreement (round-trip best == reference best) = {top1_hits}/{len(src)} = {top1_hits/len(src):.1%}")
-    print(f"random-baseline top-1 agreement                     = {1.0/G:.1%}")
-    print(f"mean reference ChrF of candidates = {statistics.mean(chrf_ref):.2f}")
-    print(f"mean round-trip ChrF of candidates= {statistics.mean(chrf_rt):.2f}")
-    print(f"mean copy-rate (source echo)      = {statistics.mean(copies):.3f}  (high => copy-exploit risk; pair with anti-copy penalty)")
-    # is the copy-exploit real here? correlation of copy-rate with round-trip reward
-    print(f"Spearman(copy-rate, round-trip ChrF) = {spearman(copies, chrf_rt):.3f}  (positive => exploit present)")
-    print("VERDICT: within-source Spearman >~0.3 and top-1 >> random => round-trip is a valid GSPO reward signal.")
+    print(f"reverse model: {'LoRA ' + args.reverse_adapter if args.reverse_adapter else 'zero-shot base'}")
+    print(f"mean reference ChrF of candidates = {statistics.mean(chrf_ref):.2f}  (candidate-quality spread)")
+    print(f"{'comparison metric':<10} {'within-src Spearman':>20} {'top-1 agree':>14} {'global Spearman':>16}")
+    for name, rt in rt_metrics.items():
+        w, n, t1 = rank_quality(rt)
+        print(f"{name:<10} {w:>20.3f} {f'{t1}/{len(src)}={t1/len(src):.1%}':>14} {spearman(rt, chrf_ref):>16.3f}")
+    print(f"random-baseline top-1 agreement = {1.0/G:.1%}")
+    print(f"mean copy-rate (source echo) = {statistics.mean(copies):.3f}  | "
+          f"Spearman(copy-rate, ChrF round-trip) = {spearman(copies, rt_metrics['ChrF']):.3f}  (positive => copy-exploit present)")
+    print("VERDICT: best within-src Spearman >~0.3 AND top-1 >> random => round-trip is a valid GSPO reward signal.")
 
 
 if __name__ == "__main__":
