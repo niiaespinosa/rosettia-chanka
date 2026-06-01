@@ -45,6 +45,33 @@ def get_vllm_model(llm):
     raise RuntimeError("could not locate in-process vLLM model handle")
 
 
+def make_reward(kind):
+    """Reward variants for ablation. NOTE: their scales differ, so compare runs
+    by held-out VAL ChrF (w0), never by the raw training reward."""
+    import sacrebleu
+
+    def chrf(h, r):
+        return sacrebleu.sentence_chrf(h, [r]).score
+
+    def lenpen(h, r):
+        hl, rl = max(1, len(h.split())), max(1, len(r.split()))
+        return abs(hl - rl) / rl
+
+    def reppen(h):
+        w = h.split()
+        return 0.0 if len(w) < 2 else (1.0 - len(set(w)) / len(w))
+
+    if kind == "chrf":
+        return lambda h, r: chrf(h, r)
+    if kind == "chrfpp":
+        return lambda h, r: sacrebleu.sentence_chrf(h, [r], word_order=2).score
+    if kind == "chrf_brevity":
+        return lambda h, r: chrf(h, r) - 20.0 * lenpen(h, r)
+    if kind == "chrf_rep":
+        return lambda h, r: chrf(h, r) - 30.0 * reppen(h)
+    raise ValueError(kind)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="facebook/nllb-200-1.3B")
@@ -61,6 +88,10 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--kl-coef", type=float, default=0.04)
+    ap.add_argument("--reward-type", default="chrf",
+                    choices=["chrf", "chrfpp", "chrf_brevity", "chrf_rep"],
+                    help="RL reward: chrf=sentence-ChrF(w0); chrfpp=ChrF++(w2); "
+                         "chrf_brevity=ChrF - 20*|len_ratio-1|; chrf_rep=ChrF - 30*rep_rate")
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--top-p", type=float, default=0.95)
     ap.add_argument("--max-src", type=int, default=128)
@@ -123,7 +154,8 @@ def main():
             for r in df.select([args.src_field, args.tgt_field]).iter_rows(named=True)
             if str(r[args.src_field]).strip() and str(r[args.tgt_field]).strip()]
     random.shuffle(data)
-    print(f"RL data: {len(data)} real pairs | G={args.group_size} B={args.prompt_batch}", flush=True)
+    reward_fn = make_reward(args.reward_type)
+    print(f"RL data: {len(data)} real pairs | G={args.group_size} B={args.prompt_batch} | reward={args.reward_type}", flush=True)
 
     def seq_logprobs(model, src_ids, src_mask, gen_ids):
         dec_in = gen_ids[:, :-1]; labels = gen_ids[:, 1:]
@@ -158,7 +190,7 @@ def main():
                 gen = list(c.token_ids)
                 texts.append(tok.decode(gen, skip_special_tokens=True))
                 gen_seqs.append([dec_start, bos] + gen)
-        rewards = torch.tensor([sacrebleu.sentence_chrf(texts[i], [refs[i // G]]).score
+        rewards = torch.tensor([reward_fn(texts[i], refs[i // G])
                                 for i in range(len(texts))], dtype=torch.float32)
         r = rewards.view(-1, G)
         adv = ((r - r.mean(1, keepdim=True)) / (r.std(1, keepdim=True) + 1e-4)).view(-1).to(dev)
