@@ -160,8 +160,14 @@ def main():
     def seq_logprobs(model, src_ids, src_mask, gen_ids):
         dec_in = gen_ids[:, :-1]; labels = gen_ids[:, 1:]
         out = model(input_ids=src_ids, attention_mask=src_mask, decoder_input_ids=dec_in)
-        logp = torch.log_softmax(out.logits.float(), -1)
-        tok_lp = logp.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+        logits = out.logits  # (B, T, V), bf16 — V=256k for NLLB
+        B, T, V = logits.shape
+        # Fused -log p(label): avoids materializing the full (B,T,256k) fp32 softmax
+        # (the old manual log_softmax(.float()) was the compute/memory bottleneck).
+        # cross_entropy upcasts to fp32 internally for stability; identical logprobs.
+        tok_lp = -torch.nn.functional.cross_entropy(
+            logits.reshape(-1, V), labels.reshape(-1),
+            ignore_index=pad_id, reduction="none").reshape(B, T)
         mask = (labels != pad_id).float()
         return (tok_lp * mask).sum(-1), mask.sum(-1).clamp(min=1.0)
 
