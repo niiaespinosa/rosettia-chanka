@@ -20,12 +20,22 @@
 | NLLB-1.3B **r2** (synthetic-augmented) standalone (beam5) | 42.95 | — | +synth train |
 | NLLB-r2 + dedup-MBR (self, pool=38.9) | 44.42 | +3.87 | +synth train |
 | **ensemble[v30 + NLLB-r2] dedup-MBR** | **44.97** | **+4.42** | +synth train |
-| ensemble[v30 + NLLB-r2 + MADLAD-400-3B] dedup-MBR | *running* | — | — |
+| ensemble[v30 + NLLB-r2 + MADLAD-400-3B] dedup-MBR | 44.44 | +3.89 | (MADLAD hurt) |
+| ensemble[v30@0.5/0.8 + NLLB-r2@0.7] dedup-MBR (pool=104) | 44.84 | +4.29 | decode only |
+| **ensemble[v30@0.5/0.8 + NLLB-r2@0.7/0.4] dedup-MBR (pool=118)** | **45.01** | **+4.46** | decode only |
 
-**Current SOTA: 44.97 ChrF** (v30 ⊕ NLLB-r2 cross-architecture dedup-MBR) — +4.42 over
-the prior 40.55 and just under 45. The synthetic-trained NLLB-r2 (44.42 self-MBR) made
-the cross-architecture ensemble jump 43.73 → 44.97; the 3-way MADLAD ensemble (running)
-is the shot to clear 45.
+**Current SOTA: 45.01 ChrF** — the full temperature-diverse 4-way pool of the two
+strong models (v30 at T=0.5 & 0.8, NLLB-r2 at T=0.7 & 0.4), dedup-MBR. **Crosses 45.**
+The previous best was v30 ⊕ NLLB-r2 (44.97); adding a second sampling temperature per
+model (more diverse candidates, same two strong models) nudged it +0.04 over 45.
+
+### MADLAD-400-3B ruled out (too weak)
+MADLAD-400-3b standalone = **19.78** ChrF (it outputs a more generic/Cusco-leaning
+Quechua that mismatches the Chanka/Ayacucho references). As a 3rd ensemble member it
+*dropped* the result (44.97 → 44.44) — same failure as the weak v32 sibling: MBR
+diversity only helps at *comparable quality*. (Also note: MADLAD/ByT5 are T5-family and
+hit a transformers-5.9.0 untied-embedding load bug producing garbage; running MADLAD
+required an isolated transformers-4.46 env + fp32. The 19.78 is its real, fixed quality.)
 v30-alone dedup-MBR is 42.93 (zero training); adding a *diverse, comparable-quality*
 NLLB-1.3B (39.46 standalone) as a second candidate source lifts the consensus +0.80.
 
