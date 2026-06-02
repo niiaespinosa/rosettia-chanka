@@ -63,9 +63,17 @@ constraint of the whole project:
 
 = What worked — the levers
 
-== Qwen-9B LoRA chain (v30)
-A broad→Chanka LoRA chain on curated data, merged. *40.55* ChrF greedy — already above the
-published ceiling, and our starting point.
+== Qwen-9B supervised model (v30)
+Our base/teacher model is a fine-tune of *Qwen3.5-9B* (Unsloth; decoder-only, with *minimal*
+native Quechua pretraining). Recipe: a *broad multilingual SFT* stage, then *Chanka SFT* via a
+LoRA chain on a *curated ~1,929-pair* Spanish–Chanka corpus, then merged to 16-bit weights;
+inference uses a chat template ("translate to Chanka Quechua"). A notable finding here:
+*curated small data beat larger noisy data* — a 109k normalized in-domain corpus scored only
+37.9, below the 1,929 curated pairs — which is why, for a decoder-only model with little quy
+pretraining, data curation and decoding mattered more than scale. Result: *40.55* greedy
+(already above the published ceiling), *42.93* with ChrF-MBR dedup decoding. This model is
+reused twice downstream: as the *teacher* for synthetic forward-translation (the next lever)
+and as an *ensemble member*. Its full model card is linked at the end.
 
 == NLLB-1.3B supervised (BSC-2024 recipe)
 LoRA r256/α512, lr 2e-4 inverse-sqrt. Standalone *39.46* — a strong, architecturally diverse
@@ -191,5 +199,6 @@ validation split and run one test evaluation with `nllb/eval_nllb_americasnlp.py
 - Code: #link("https://github.com/Sekinal/rosettia-chanka")
 - Model (LoRA adapter): #link("https://huggingface.co/Thermostatic/rosettia-quy-gspo-nllb13b-lora")
 - Model (merged, standalone): #link("https://huggingface.co/Thermostatic/rosettia-quy-gspo-nllb13b-merged")
+- Qwen-9B model (v30 — base/teacher/ensemble member, with its own training card): #link("https://huggingface.co/Thermostatic/rosettia-quy-v30b-9b-merged")
 - NLLB/M2M-100 support for vLLM (our fork): #link("https://github.com/Sekinal/vllm/tree/add-nllb-m2m100-support")
 - GSPO: Zheng et al. 2025, #emph[Group Sequence Policy Optimization], arXiv:2507.18071.
