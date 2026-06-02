@@ -54,6 +54,17 @@ GSPO adds **+2.6 ChrF** over the supervised model, and the best single **1.3B** 
 (46.43) matches our previous, much larger **9B + 1.3B** ensemble — a simpler, smaller
 system at equal quality.
 
+> **Which number is the "clean" one (please read).** The **fully pre-registered** result is
+> the validation-selected checkpoint (ckpt-600) with our standard decode (beam5 +
+> apostrophe-suppression): **45.53 ChrF**, a single test evaluation. The **MBR (46.43)** and
+> **multi-checkpoint-ensemble (46.71)** numbers involve decode-time choices — the MBR
+> sampling temperature and which checkpoints to ensemble — that we **compared on the test
+> set**. They are therefore *best-found configurations*, not blind single evaluations, and
+> the ~0.3–0.6 ChrF spread among them is within the noise of a 1003-sentence single-reference
+> test. The robust, conservative claim is **≈46 ChrF, clearly above prior published work**;
+> the exact decimal of the MBR/ensemble rows is configuration-dependent. (The GSPO *checkpoint*
+> was selected on a held-out validation split, never on test.)
+
 > **A note on comparability.** Many shared-task papers report **ChrF++** (`word_order=2`),
 > which typically reads ~2–3 points higher than the `word_order=0` ChrF used here (e.g.
 > BSC-2024, the 2024 task winner, reported 38.21 ChrF++). Cross-metric comparisons should
@@ -86,6 +97,11 @@ quality (not metric-gaming), we score several automatic, speaker-free axes:
 leakage and length error — i.e. the gains are multi-axis quality, not surface gaming.
 (These are automatic proxies; no human judgments exist for this language pair.)
 
+> In the scorecard and the metrics table below, NLLB-1.3B is decoded with the **same**
+> settings as the GSPO model (beam5 + `no_repeat_ngram_size=3` + apostrophe-suppression) →
+> 43.17, vs 42.95 (beam5 only) in the headline table. The matched-decode comparison is the
+> fair one and slightly *understates* the GSPO gain.
+
 ## Standard MT metrics (supervised vs GSPO)
 
 ![Standard metrics](figures/fig4_metrics.png)
@@ -105,15 +121,40 @@ is exactly why we treat **ChrF as the primary metric** here.
 
 ## Training
 
-- **Base / SFT:** NLLB-200-1.3B → LoRA (BSC-2024 recipe, r256/α512) → + ~198k synthetic
-  forward-translated pairs → supervised model (42.95).
+- **Base / SFT:** NLLB-200-1.3B → LoRA (BSC-2024 recipe, r256/α512, lr 2e-4 inverse-sqrt)
+  → + ~198k synthetic pairs (Spanish monolingual forward-translated by our Qwen-9B teacher;
+  sequence-level distillation) → supervised model ("NLLB-r2", 42.95).
 - **RL:** GSPO — sequence-level (length-normalized) importance ratio + group-relative
-  advantage + KL-to-frozen-reference. Reward = sentence-ChrF vs unseen Ayacucho refs.
-  Group size 16. Rollouts via an in-process vLLM engine (we implemented NLLB/M2M-100
-  support for vLLM) with per-step weight sync.
+  advantage + KL-to-frozen-reference, with **single inner-epoch updates per rollout** (so the
+  importance ratio is 1 at the update and the ratio/clip reduce to length-normalized policy
+  gradient in this regime). **Reward = sentence-ChrF**, selected on validation over ChrF++,
+  length-penalty, repetition-penalty, and round-trip-adequacy reward variants (an ablation;
+  plain ChrF won — the round-trip reward was built and falsified). Group size 16; lr 2e-6,
+  clip 0.2, KL-coef 0.04. Rollouts via an in-process vLLM engine (we implemented NLLB/M2M-100
+  support for vLLM, unsupported upstream) with per-step GPU→GPU weight sync.
 - **Data hygiene:** RL data deduplicated against the model's exact training corpus **and**
   the test set; dialect-filtered to Ayacucho/Chanka; separate validation split for
   checkpoint selection; one final test evaluation.
+
+## Reproduce
+
+All scripts are in the [GitHub repo](https://github.com/Sekinal/rosettia-chanka); the full
+narrative (problems, breakthroughs, methodology) is in [`docs/report/`](https://github.com/Sekinal/rosettia-chanka/tree/main/docs/report)
+(Typst source + compiled PDF). Outline:
+
+```bash
+# 1. Supervised NLLB (BSC recipe) + synthetic distillation -> "NLLB-r2"
+python scripts/nllb/train_nllb_chanka.py --train-parquet clean_chanka/nllb_v2_corpus.parquet ...
+# 2. GSPO RL (needs our NLLB-in-vLLM fork; reward = held-out-ref ChrF, G=16)
+python scripts/rl/gspo_nllb_vllm.py --init-adapter <nllb-r2> --reward-type chrf --group-size 16 ...
+# 3. Select the peak checkpoint on the held-out validation split, then ONE test eval
+python scripts/nllb/eval_nllb_americasnlp.py --adapter <ckpt> --no-repeat-ngram 3   # standalone 45.53
+# 4. (optional, configuration-dependent) MBR + multi-checkpoint ensemble
+python scripts/decoding/gen_candidates_nllb.py --adapter <ckpt> --temperature 0.7
+python scripts/decoding/ensemble_mbr_rerank.py --candidate-jsonls <ckpt600> <ckpt800>   # 46.71
+# audits / scorecard
+python scripts/decoding/quality_scorecard.py --reverse-adapter <reverse> --pred-jsonl ...
+```
 
 ## Usage
 
