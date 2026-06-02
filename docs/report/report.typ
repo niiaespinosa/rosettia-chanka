@@ -10,8 +10,10 @@
   #text(size: 17pt, weight: "bold")[Spanish → Chanka (Ayacucho) Quechua Machine Translation]
   #v(2pt)
   #text(size: 12pt)[From a 40.55 baseline to a ≈46.7 ChrF result — a conservative engineering report]
-  #v(4pt)
-  #text(size: 9pt, fill: rgb("#5b6675"))[rosettia · AmericasNLP 2021 spa→quy benchmark · single reference, ChrF (word_order=0)]
+  #v(5pt)
+  #text(size: 10.5pt)[Estefanía Espinosa Fernández #h(0.6em) · #h(0.6em) Irving Ernesto Quezada Ramírez]
+  #v(2pt)
+  #text(size: 9pt, fill: rgb("#5b6675"))[rosettia · SomosNLP hackathon · AmericasNLP 2021 spa→quy benchmark · single reference, ChrF (word_order=0)]
 ]
 
 #v(2pt)
@@ -216,6 +218,15 @@ fork; reward = held-out-reference ChrF, G=16); (3) select the peak checkpoint on
 validation split and run one test evaluation with `nllb/eval_nllb_americasnlp.py`; (4) optionally
 `decoding/gen_candidates_nllb.py` + `decoding/ensemble_mbr_rerank.py` for MBR/ensemble; and
 `decoding/quality_scorecard.py` for the beyond-the-metric audit.
+
+= Author contributions
+
+A two-person SomosNLP hackathon project. *Estefanía Espinosa Fernández* led the data
+curation and the initial Qwen3.5 LoRA experiments (comparing DoRA, rsLoRA and LoRA, and
+exploring data mixes). *Irving Ernesto Quezada Ramírez* (#link("https://irvingernesto.com")[irvingernesto.com])
+carried out the subsequent modeling through the final system — synthetic-data distillation,
+the NLLB pipeline, GSPO reinforcement learning, decoding/ensembling, evaluation, and release.
+The work was a close collaboration; both contributions were essential to the result.
 
 = Links
 

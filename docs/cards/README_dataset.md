@@ -95,12 +95,26 @@ the build scripts in the [GitHub repo](https://github.com/Sekinal/rosettia-chank
 also not part of this release — this dataset is scoped to the **data actually used**, and only the
 cleanly-licensed part of it.)
 
+## Authors & contributions
+
+A two-person SomosNLP hackathon project:
+
+- **Estefanía Espinosa Fernández** — data curation (including the reviewed extraction
+  and cleaning of the Chanka pairs and glossary released here), and the initial Qwen3.5
+  LoRA experiments (DoRA / rsLoRA / LoRA comparison, data mixes).
+- **Irving Ernesto Quezada Ramírez** ([irvingernesto.com](https://irvingernesto.com)) —
+  the subsequent modeling and release work (synthetic distillation, the NLLB pipeline,
+  GSPO RL, decoding/ensembling, evaluation, and packaging).
+
+The project was a close collaboration; both contributions were essential to the result.
+(Source attribution for the underlying *Manual* is in **License & credits** above.)
+
 ## Citation
 
 ```bibtex
 @misc{rosettia_chanka_data,
   title  = {RosettIA Chanka Quechua — Judicial Parallel Data},
-  author = {RosettIA project},
+  author = {Espinosa Fern\'andez, Estefan\'ia and Quezada Ram\'irez, Irving Ernesto},
   note   = {Derived from: Ardito Vega, W. (2014), Manual para el empleo del Quechua Chanka
             en la administración de justicia, Ministerio de Cultura del Perú,
             ISBN 978-612-4126-20-8},

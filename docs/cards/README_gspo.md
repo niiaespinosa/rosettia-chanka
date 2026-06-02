@@ -190,6 +190,18 @@ suppression at decode is a small free gain (Ayacucho quy has no glottalization).
 - Dialect: **Ayacucho/Chanka** (`quy`). Not validated for Cuzco (`quz`) or Central varieties.
 - License `cc-by-nc-4.0`; non-commercial, consistent with the underlying data sources.
 
+## Authors & contributions
+
+A two-person SomosNLP hackathon project:
+
+- **Estefanía Espinosa Fernández** — data curation, and the initial Qwen3.5 LoRA
+  experiments (comparing DoRA, rsLoRA and LoRA, and exploring data mixes).
+- **Irving Ernesto Quezada Ramírez** ([irvingernesto.com](https://irvingernesto.com)) —
+  the subsequent modeling through the final system: synthetic-data distillation, the NLLB
+  pipeline, GSPO reinforcement learning, decoding/ensembling, evaluation, and release.
+
+The project was a close collaboration; both contributions were essential to the result.
+
 ## Links & resources
 
 - **Code & methodology:** https://github.com/Sekinal/rosettia-chanka

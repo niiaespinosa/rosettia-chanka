@@ -92,3 +92,15 @@ consensus by mean pairwise sentence-ChrF over the deduplicated pool).
 Research-grade MT for a low-resource, agglutinative language. Outputs should be
 reviewed by speakers before any consequential use. Quality varies with domain and
 sentence length; named entities and Spanish loanwords are the most error-prone.
+
+## Authors & contributions
+
+A two-person SomosNLP hackathon project:
+
+- **Estefanía Espinosa Fernández** — data curation, and the initial Qwen3.5 LoRA
+  experiments behind this model (comparing DoRA, rsLoRA and LoRA, and exploring data mixes).
+- **Irving Ernesto Quezada Ramírez** ([irvingernesto.com](https://irvingernesto.com)) —
+  the subsequent modeling and the broader system this model is part of (synthetic
+  distillation, the NLLB pipeline, GSPO RL, decoding/ensembling, evaluation, and release).
+
+The project was a close collaboration; both contributions were essential to the result.
