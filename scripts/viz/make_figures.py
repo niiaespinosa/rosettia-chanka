@@ -120,7 +120,7 @@ def fig_scorecard():
             ax.text(r.get_x() + r.get_width()/2, r.get_height() + 1.2, f"{r.get_height():.1f}",
                     ha="center", fontsize=8.6, color=INK)
     _clean(ax)
-    ax.legend(frameon=False, fontsize=9.3, loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.0))
+    ax.legend(frameon=False, fontsize=9.5, loc="upper left", ncol=1, handlelength=1.2)
     _titles(ax, "Quality beyond the surface metric",
             "GSPO improved multiple automatic quality axes, not only ChrF — evidence the RL gains are real.")
     fig.text(0.0, -0.04,
@@ -131,6 +131,41 @@ def fig_scorecard():
     fig.savefig(f"{OUT}/fig3_scorecard.png"); plt.close(fig)
 
 
+def fig_metrics():
+    """Standard MT metrics, supervised vs GSPO. Two panels: higher-better and TER (lower-better)."""
+    import numpy as np
+    nllb = {"ChrF": 43.17, "ChrF++": 37.63, "BLEU": 5.65, "TER": 87.02}
+    gspo = {"ChrF": 45.53, "ChrF++": 39.64, "BLEU": 5.94, "TER": 88.62}
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.3), gridspec_kw={"width_ratios": [3, 1.05], "wspace": 0.32})
+    # higher-is-better panel
+    hb = ["ChrF", "ChrF++", "BLEU"]; x = np.arange(len(hb)); w = 0.38
+    axL.bar(x - w/2, [nllb[m] for m in hb], w, color=NLLB, zorder=3, label="NLLB-1.3B (pre-RL)")
+    axL.bar(x + w/2, [gspo[m] for m in hb], w, color=BEST, zorder=3, label="+ GSPO RL")
+    for i, m in enumerate(hb):
+        axL.text(i - w/2, nllb[m] + 0.7, f"{nllb[m]:.1f}", ha="center", fontsize=8.6)
+        axL.text(i + w/2, gspo[m] + 0.7, f"{gspo[m]:.1f}", ha="center", fontsize=8.6)
+    axL.set_xticks(x); axL.set_xticklabels(hb); axL.set_ylim(0, 52)
+    axL.yaxis.grid(True, color=GRID); axL.set_axisbelow(True); _clean(axL)
+    axL.set_xlabel("↑ higher is better", fontsize=9.5, color="#5b6675")
+    axL.legend(frameon=False, fontsize=9.3, loc="upper right")
+    # TER panel (lower better)
+    axR.bar([0 - w/2], [nllb["TER"]], w, color=NLLB, zorder=3)
+    axR.bar([0 + w/2], [gspo["TER"]], w, color=BEST, zorder=3)
+    axR.text(0 - w/2, nllb["TER"] + 1.0, f"{nllb['TER']:.1f}", ha="center", fontsize=8.6)
+    axR.text(0 + w/2, gspo["TER"] + 1.0, f"{gspo['TER']:.1f}", ha="center", fontsize=8.6)
+    axR.set_xticks([0]); axR.set_xticklabels(["TER"]); axR.set_ylim(0, 100)
+    axR.yaxis.grid(True, color=GRID); axR.set_axisbelow(True); _clean(axR)
+    axR.set_xlabel("↓ lower is better", fontsize=9.5, color="#5b6675")
+    _titles(axL, "Standard MT metrics — supervised vs GSPO",
+            "AmericasNLP 2021 spa→quy test · 1003 sentences · single reference")
+    fig.text(0.0, -0.04,
+             "GSPO (reward = ChrF) improves the character-level metrics (ChrF, ChrF++); BLEU is near-floor for both "
+             "(word n-gram matching is\nbrutal for agglutinative Quechua + single reference), and word-level TER does not "
+             "improve — GSPO optimized character overlap, not word edits.",
+             fontsize=7.6, color="#7a828f")
+    fig.savefig(f"{OUT}/fig4_metrics.png"); plt.close(fig)
+
+
 if __name__ == "__main__":
-    fig_comparison(); fig_gspo_curve(); fig_scorecard()
+    fig_comparison(); fig_gspo_curve(); fig_scorecard(); fig_metrics()
     print("wrote figures to", OUT)

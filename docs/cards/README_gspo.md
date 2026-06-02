@@ -86,6 +86,23 @@ quality (not metric-gaming), we score several automatic, speaker-free axes:
 leakage and length error — i.e. the gains are multi-axis quality, not surface gaming.
 (These are automatic proxies; no human judgments exist for this language pair.)
 
+## Standard MT metrics (supervised vs GSPO)
+
+![Standard metrics](figures/fig4_metrics.png)
+
+| Metric | NLLB-1.3B (pre-RL) | + GSPO | direction |
+|---|---:|---:|---|
+| ChrF (w0) | 43.17 | **45.53** | higher better |
+| ChrF++ (w2) | 37.63 | **39.64** | higher better |
+| BLEU | 5.65 | **5.94** | higher better |
+| TER | 87.02 | 88.62 | lower better |
+
+We report all four for transparency. GSPO (reward = ChrF) improves the **character-level**
+metrics (ChrF, ChrF++) and BLEU marginally, but **word-level TER does not improve** — the
+RL optimized character overlap, not word edits. BLEU is near-floor for both systems: word
+n-gram matching is unreliable for an agglutinative language under a single reference, which
+is exactly why we treat **ChrF as the primary metric** here.
+
 ## Training
 
 - **Base / SFT:** NLLB-200-1.3B → LoRA (BSC-2024 recipe, r256/α512) → + ~198k synthetic
@@ -131,3 +148,13 @@ suppression at decode is a small free gain (Ayacucho quy has no glottalization).
   `no_repeat_ngram_size=3` at decode).
 - Dialect: **Ayacucho/Chanka** (`quy`). Not validated for Cuzco (`quz`) or Central varieties.
 - License `cc-by-nc-4.0`; non-commercial, consistent with the underlying data sources.
+
+## Links & resources
+
+- **Code & methodology:** https://github.com/Sekinal/rosettia-chanka
+- **Merged (standalone) model**, no PEFT needed: https://huggingface.co/Thermostatic/rosettia-quy-gspo-nllb13b-merged
+- **NLLB / M2M-100 support for vLLM** (our fork — used for fast GSPO rollouts; NLLB was unsupported upstream): https://github.com/Sekinal/vllm/tree/add-nllb-m2m100-support
+- **Data:** https://huggingface.co/datasets/Thermostatic/rosettia-chanka-data
+- **Qwen-9B sibling model** (the other ensemble member): https://huggingface.co/Thermostatic/rosettia-quy-v30b-9b-merged
+- **Base model:** https://huggingface.co/facebook/nllb-200-1.3B
+- **GSPO:** Zheng et al. 2025, *Group Sequence Policy Optimization* (arXiv:2507.18071)
