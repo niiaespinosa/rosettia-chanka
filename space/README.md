@@ -1,13 +1,13 @@
 ---
 title: RosettIA · Español → Quechua Chanka
 emoji: 🌄
-colorFrom: teal
-colorTo: green
+colorFrom: green
+colorTo: blue
 sdk: gradio
 app_file: app.py
 pinned: false
 license: cc-by-nc-4.0
-short_description: Spanish → Chanka/Ayacucho Quechua translation (GSPO-NLLB, ZeroGPU)
+short_description: Spanish → Chanka/Ayacucho Quechua MT demo
 models:
   - Thermostatic/rosettia-quy-gspo-nllb13b-merged
 ---
