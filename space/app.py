@@ -86,7 +86,7 @@ out-of-domain sentences.
 collaboration; both contributions were essential. Base model: `facebook/nllb-200-1.3B`.
 """
 
-with gr.Blocks(theme=THEME, css=CSS, title="RosettIA · Español → Quechua Chanka") as demo:
+with gr.Blocks(title="RosettIA · Español → Quechua Chanka") as demo:
     gr.HTML(
         "<div id='hdr'><h1>🌄 RosettIA</h1>"
         "<p>Spanish → Chanka / Ayacucho Quechua (<code>quy</code>) translation</p>"
@@ -96,7 +96,7 @@ with gr.Blocks(theme=THEME, css=CSS, title="RosettIA · Español → Quechua Cha
         inp = gr.Textbox(label="Español", lines=5, autofocus=True,
                          placeholder="Escribe una frase en español…")
         outp = gr.Textbox(label="Chanka / Ayacucho Quechua (quy)", lines=5,
-                          show_copy_button=True, interactive=False)
+                          interactive=False)
     btn = gr.Button("Traducir  →", variant="primary")
     gr.Examples(EXAMPLES, inputs=inp, label="Ejemplos")
 
@@ -114,4 +114,4 @@ with gr.Blocks(theme=THEME, css=CSS, title="RosettIA · Español → Quechua Cha
     btn.click(translate, ins, outp)
     inp.submit(translate, ins, outp)
 
-demo.queue(max_size=20).launch()
+demo.queue(max_size=20).launch(theme=THEME, css=CSS)
