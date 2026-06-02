@@ -281,3 +281,22 @@ contrastive parallel data, validate with the within-source-Spearman gate (+ any 
 judgments obtainable). Caveats: cross-lingual metric transfer to quy is itself unproven; without
 quy human data we can only validate via proxies. This is an *evaluation* contribution, not a
 model-quality jump.
+
+### COMET-for-Chanka — data availability verdict (deep search 2026-06-01)
+Exhaustive verified search (20 primary sources, 25 adversarially-verified claims, 0 killed):
+**No usable Quechua human-judgment MT dataset exists — not for quy, nor in any adaptable
+other variety.** Specifics:
+- AmericasNLP 2025 ST3 (only indigenous MT-metrics task) = Spanish→Guarani/Bribri/Nahuatl
+  ONLY, 300 human-rated segs/lang (100 dev+200 test, 5-pt semantics+fluency Likert,
+  Pearson/Spearman). Quechua absent. Repo: github.com/AmericasNLP/americasnlp2025 (ST3 +
+  FUSE/Tekio baselines = reusable TEMPLATE if we ever get speakers).
+- AmericasNLP quy = parallel data only (ST1); only human eval ever = Bribri (2024, 50 inputs).
+- WMT Metrics/QE + MLQE-PE: zero Quechua / zero indigenous-American — useless even as transfer.
+- Only concrete quy human-judgment artifact: github.com/johneortega/mt_quechua_spanish — but
+  Quechua→Spanish (rates Spanish output) AND Cuzco quz (not quy), undocumented scale. Marginal.
+- No COMET checkpoint validated on Quechua (FUSE/Tekio = Gn/Bribri/Nahuatl only).
+**Conclusion:** human-grounded COMET-Chanka is BLOCKED (no data + no speakers to create any).
+Only proxy-grounded metrics are possible (round-trip adequacy = weak ~0.25; or self-supervised
+contrastive on NLLB encoder). The multi-axis proxy SCORECARD we built is the defensible
+"beyond ChrF" contribution; it needs no human labels. Encoder backbone is NOT the blocker
+(NLLB encoder handles quy). Re-check AmericasNLP yearly — a future edition may add Quechua.
