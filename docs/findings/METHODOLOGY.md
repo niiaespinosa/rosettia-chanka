@@ -27,16 +27,17 @@ results stay comparable and leakage-free. Progression so far: **40.55 → 46.44 
 | **Cross-arch ensemble** | pool candidates from diverse, **comparable-quality** models → dedup-MBR | 45.01 (v30⊕NLLB-r2) | `ensemble_mbr_rerank.py` |
 | **GSPO RL** (novel) | RL NLLB on held-out data, ChrF reward | **45.49 standalone / 46.44 ens** | `scripts/rl/gspo_nllb_vllm.py` |
 
-**MBR rules that matter:** (a) **dedup the candidate pool** before consensus (+0.5 over raw) — duplicates bias the centroid; (b) ensemble members must be *diverse AND comparable quality* — a weak member (v32@34.5, MADLAD@19.78, wrong-dialect) HURTS; (c) apostrophe suppression at decode is a free gain for NLLB.
+**MBR rules that matter:** (a) **dedup the candidate pool** before consensus (+0.5 over raw) — duplicates bias the centroid; (b) ensemble members must be *diverse AND comparable quality* — a weak member (v32@34.5, MADLAD@19.78, wrong-dialect) HURTS. **Update (2026-06-01): GSPO pulled NLLB past v30, so v30 now *hurts* the NLLB ensemble (46.40 < 46.43 self-MBR) — cross-arch lever exhausted until a 2nd member is restored to parity;** (c) apostrophe suppression at decode is a free gain for NLLB; (d) **candidate-pool temperature ≈0.7, NOT 0.5** — MBR is very sensitive to pool diversity (same ckpt: T=0.5→46.14, T=0.7→46.43). Pick temperature on **val**, never test.
 
 ## 3. GSPO-on-NLLB recipe (the frontier-pusher)
 First GSPO applied to an encoder-decoder NMT model. `scripts/rl/gspo_nllb_vllm.py`.
 - **Reward:** sentence-ChrF vs the real (unseen, Ayacucho) reference. Sequence-level (length-normalized) GSPO importance ratio + clip + group-normalized advantage + KL-to-frozen-ref.
 - **Policy:** NLLB-r2 LoRA (trainable). **Ref:** frozen copy (KL anchor).
 - **Rollouts via in-process vLLM** (our NLLB port) — TRL-style: after each step push merged weights into the engine with `load_weights` (GPU→GPU, no disk). 3.2× HF (77 rollouts/s).
-- **Hyperparams (working):** group-size 8–16, prompt-batch 48, lr 2e-6, clip 0.2, kl-coef 0.04, temp 1.0, max-new 64, micro-batch 48. Higher G = lower-variance advantage (quality-positive).
-- **Learning curve:** held-out reward climbed 42→51 over 1200 steps, still rising → keep training; resume by setting `--init-adapter` to the last checkpoint.
-- **Eval:** dump candidates from the checkpoint (`gen_candidates_nllb.py`), self dedup-MBR, and ensemble with v30; select on val, report test once.
+- **Hyperparams (working):** group-size 8–16, prompt-batch 48, lr 2e-6, clip 0.2, kl-coef 0.04, temp 1.0, max-new 64, micro-batch 48. **G=16 > G=8 at matched steps** (val 50.70 vs 50.05 @ step 200) — lower-variance advantage is quality-positive.
+- **Reward design (2026-06-01 ablation, ranked on val):** plain **ChrF wins** (50.05) > chrf_brevity 50.05 ≈ chrfpp 49.94 > chrf_rt_copy 49.63. Match the reward to the *eval* metric (w0). **Round-trip/back-translation reward was built, gated, and falsified** (does not beat plain ChrF) — see findings doc.
+- **Learning curve / STOP RULE:** held-out **val** ChrF peaks then DECLINES (clean run: 50.70→51.98→52.99@600→52.94→52.05@1000) while the *training* reward keeps creeping up = over-optimization. **Val-select the peak checkpoint; do NOT run to the end.** Stop early once val plateaus (saved ~6h here).
+- **Eval:** dump candidates (`gen_candidates_nllb.py`, **T≈0.7**), self dedup-MBR; ensemble only with comparable-quality members; select checkpoint+decode on val, report test once.
 
 ## 4. vLLM NLLB port (for fast rollouts/offline gen) — `Sekinal/vllm` branch `add-nllb-m2m100-support`
 - File `vllm/model_executor/models/m2m_100.py` (covers NLLB + M2M-100), registered in `_MULTIMODAL_MODELS`. Ported from the bart-plugin.

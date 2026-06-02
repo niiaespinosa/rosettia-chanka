@@ -179,3 +179,58 @@ back-translation model — its useful role is **data augmentation** (back-transl
 with the within-source-Spearman / top-1-agreement proxy on val candidates. It ruled
 out the zero-shot reverse (0.16 ≈ noise) and correctly predicted the trained-reverse
 reward would not help — saving a 1200-step run each time.
+
+---
+
+## Clean long GSPO run (2026-06-01) — honest results & the single-model win
+
+Fresh GSPO from the NLLB-r2 SFT base (NOT the old ckpt-1200 — reproducibility),
+plain **ChrF reward** (the ablation winner), **G=16** (lower-variance advantage),
+fused-cross_entropy logprobs, vLLM mem-frac 0.30. Planned 1600 steps; **stopped
+early at the val plateau**. Held-out val (rl_val, 2k) curve:
+
+| ckpt | 200 | 400 | 600 | 800 | 1000 |
+|---|---|---|---|---|---|
+| val ChrF (w0) | 50.70 | 51.98 | **52.99** | 52.94 | 52.05 ↓ |
+
+- **G=16 > G=8** at matched steps (ckpt-200 = 50.70 vs the G=8 ablation's 50.05) —
+  the lower-variance group-relative advantage is quality-positive, as predicted.
+- **Over-optimization is real:** the *training* reward kept creeping up while *val*
+  peaked at 600 then declined at 1000. → always val-select; do NOT run to the end.
+- Val-selected checkpoint = **ckpt-600 (52.99)**.
+
+### Test results (AmNLP 2021, ChrF w0) — and a candid read
+| system | ChrF w0 |
+|---|---|
+| ckpt-600 standalone beam5 + apostrophe-suppress | 45.53 |
+| ckpt-600 self dedup-MBR, candidate **T=0.5** | 46.14 |
+| ckpt-600 self dedup-MBR, candidate **T=0.7** | **46.43** |
+| ckpt-600 ⊕ v30 ensemble (T=0.7) | 46.40 |
+| ckpt-800 self dedup-MBR (T=0.7) | 46.55 |
+| prior SOTA (old ckpt-1200 ⊕ v30 ensemble) | 46.44 |
+
+**Honest calibration (don't oversell):** strictly val-selected → ckpt-600 self-MBR
+**46.43 ≈ the prior 46.44** — a **reproduction/tie, not a clear numeric SOTA**.
+ckpt-800's 46.55 is +0.11 but (a) within single-reference noise on 1003 sentences
+and (b) **test-selected** (val said ckpt-600 ≥ ckpt-800). So: we matched the frontier,
+we did not meaningfully move it.
+
+**The real win is qualitative — single model now equals the prior ensemble.** The
+prior 46.44 needed a **9B Qwen (v30) + 1.3B NLLB** cross-arch ensemble; we now get the
+same ~46.4 from **one 1.3B NLLB**. And crucially **v30 now HURTS** the ensemble (46.40 <
+46.43 self-MBR) — GSPO pulled NLLB past v30, so the "diverse AND comparable quality"
+condition broke and the cross-arch lever is **exhausted** until a second member is
+brought back up to par. Simpler, ~7× smaller, equal quality, fully reproducible.
+
+### MBR temperature lesson (reusable)
+MBR quality is **very sensitive to candidate-pool diversity → temperature**:
+T=0.5 → 46.14, T=0.7 → 46.43 (+0.29) on the *same* checkpoint. Generate MBR pools at
+**T≈0.7** (the `_n64` recipe), not 0.5. And **select T on val, never test.**
+
+### Where the frontier actually sits now
+We're likely near the ceiling single-reference ChrF can *show* on this benchmark
+(low-50s even for humans; we're at ~46.4 test / ~53 val). Further single-ref-ChrF
+chasing of the same levers = diminishing returns / noise. Real gains need a *different*
+lever: (a) a second ensemble member restored to parity (GSPO the Qwen, or ByT5);
+(b) **backtranslation data** from the reverse quy->spa model we built; or (c) accept the
+plateau. Net project arc: **40.55 -> ~46.5 ChrF (+~6), ~+7 over best published (39.40).**
