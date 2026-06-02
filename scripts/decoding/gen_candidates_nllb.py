@@ -24,6 +24,8 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--top-p", type=float, default=0.95)
     ap.add_argument("--num-beams-greedy", type=int, default=5)
+    ap.add_argument("--no-repeat-ngram", type=int, default=3,
+                    help="block repeating any n-gram of this size (kills degenerate loops); 0 disables")
     ap.add_argument("--max-new", type=int, default=128)
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--suppress-apostrophe", action="store_true", default=True)
@@ -60,13 +62,14 @@ def main():
     for i in range(0, len(src), args.batch_size):
         batch = src[i:i+args.batch_size]
         enc = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256).to("cuda")
+        nrg = {"no_repeat_ngram_size": args.no_repeat_ngram} if args.no_repeat_ngram > 0 else {}
         with torch.no_grad():
             g = model.generate(**enc, forced_bos_token_id=bos, num_beams=args.num_beams_greedy,
-                               max_new_tokens=args.max_new, bad_words_ids=bad_words_ids)
+                               max_new_tokens=args.max_new, bad_words_ids=bad_words_ids, **nrg)
             s = model.generate(**enc, forced_bos_token_id=bos, do_sample=True,
                                temperature=args.temperature, top_p=args.top_p,
                                num_return_sequences=args.n_samples, max_new_tokens=args.max_new,
-                               bad_words_ids=bad_words_ids)
+                               bad_words_ids=bad_words_ids, **nrg)
         greedy.extend(tok.batch_decode(g, skip_special_tokens=True))
         dec = tok.batch_decode(s, skip_special_tokens=True)
         for b in range(len(batch)):

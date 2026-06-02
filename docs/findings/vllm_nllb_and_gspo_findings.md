@@ -234,3 +234,50 @@ chasing of the same levers = diminishing returns / noise. Real gains need a *dif
 lever: (a) a second ensemble member restored to parity (GSPO the Qwen, or ByT5);
 (b) **backtranslation data** from the reverse quy->spa model we built; or (c) accept the
 plateau. Net project arc: **40.55 -> ~46.5 ChrF (+~6), ~+7 over best published (39.40).**
+
+---
+
+## Beyond-the-metric quality scorecard (2026-06-01) — what GSPO *actually* improved
+
+`scripts/decoding/quality_scorecard.py`: speaker-free multi-axis eval. ChrF saturates and
+single-reference hides quality behind paraphrase variance, so we score several axes —
+surface (ChrF), **adequacy** (reverse-translate pred quy→spa, ChrF vs the original Spanish
+source, comparison in Spanish so reliable), degeneracy/loop rate, Spanish-leakage, number
+convention, length calibration. AmNLP 2021 test:
+
+| system | ChrF | adequacy(roundtrip) | loop% | ES-leak% | digit-keep% | len-miscal |
+|---|---|---|---|---|---|---|
+| NLLB-r2 (pre-RL SFT) | 43.17 | 48.28 | 0.0 | 3.39 | 88.7 | 0.201 |
+| GSPO ckpt-600        | 45.53 | 52.86 | 0.0 | 2.69 | 88.7 | 0.175 |
+| GSPO + no_repeat=3   | 45.54 | 52.88 | 0.0 | 2.69 | 88.7 | 0.174 |
+
+**Key finding: GSPO improved adequacy (+4.6 round-trip) MORE than surface ChrF (+2.4)**, and
+also cut Spanish leakage and improved length calibration — i.e. the RL gains are genuine
+multi-axis quality, NOT ChrF-gaming. Strong evidence the +2.5 ChrF is "real".
+
+**Honest caveats:** (a) `no_repeat=3` is ChrF- and quality-neutral on aggregate (45.53→45.54);
+its only value is killing the rare catastrophic loop (1/1003, `llipipipi…`) — a worst-case
+correctness guard, applied at decode. (b) **number digit-retention is 88.7% for ALL systems** —
+GSPO did NOT change digit-vs-spelled-out; refs spell out ~52%, so this needs a *separate*
+intervention (targeted data or a digit→Quechua-numeral post-processor), not RL. (c) the loop
+detector undercounts (prefix-only check missed the one real loop) — fix is cosmetic.
+
+### Generation audit (`scripts/decoding/audit_generations.py`)
+Manual + automatic error-mode audit overturned hypothesised failure modes: most "repetition"
+is grammatical Quechua reduplication (`chaki chaki`=very dry) or source-mirroring; most
+"copy/leakage" is correct term/NE borrowing with the `nisqa` marker. **The model is clean.**
+Real residual issues: (1) numbers as digits vs spelled-out (bounded, ~31 sentences); (2)
+loanword spelling where a native form exists (`tío→tiyu`, `abuelo→machu`); (3) the rare loop.
+**Most of the remaining ChrF gap is single-reference paraphrase variance, not fixable errors.**
+
+### Learned-metric direction (COMET-for-Chanka) — scoped
+Round-trip adequacy is a *weak* proxy (within-source Spearman ~0.25). A learned metric could
+do better. Field context (verified 2026-06-01): **AmericasNLP 2025 Shared Task 3 = "MT Metrics
+for Indigenous Languages"** with released human-DA dev data + baselines (FUSE etc.), but for
+**Guarani/Bribri/Nahuatl, NOT Quechua**. quy got human meaning+fluency eval in 2023/2024 but no
+cleanly-released quy judgment set found. Realistic plan: train a COMET-style metric on ST3
+human DA (multilingual/indigenous-aware or NLLB encoder), inject quy via self-supervised
+contrastive parallel data, validate with the within-source-Spearman gate (+ any quy human
+judgments obtainable). Caveats: cross-lingual metric transfer to quy is itself unproven; without
+quy human data we can only validate via proxies. This is an *evaluation* contribution, not a
+model-quality jump.

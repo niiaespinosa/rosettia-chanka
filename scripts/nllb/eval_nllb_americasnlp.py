@@ -18,6 +18,8 @@ def main():
     ap.add_argument("--tgt-lang", default="quy_Latn")
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--num-beams", type=int, default=5)
+    ap.add_argument("--no-repeat-ngram", type=int, default=3,
+                    help="block repeating any n-gram of this size (kills degenerate loops); 0 disables")
     ap.add_argument("--max-new", type=int, default=128)
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--out-pred", default=None)
@@ -55,8 +57,11 @@ def main():
         batch = src[i:i+args.batch_size]
         enc = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256).to("cuda")
         with torch.no_grad():
-            out = model.generate(**enc, forced_bos_token_id=bos, num_beams=args.num_beams,
-                                 max_new_tokens=args.max_new, bad_words_ids=bad_words_ids)
+            gkw = dict(forced_bos_token_id=bos, num_beams=args.num_beams,
+                       max_new_tokens=args.max_new, bad_words_ids=bad_words_ids)
+            if args.no_repeat_ngram > 0:
+                gkw["no_repeat_ngram_size"] = args.no_repeat_ngram
+            out = model.generate(**enc, **gkw)
         preds.extend(tok.batch_decode(out, skip_special_tokens=True))
         print(f"{min(i+args.batch_size,len(src))}/{len(src)}", flush=True)
 
