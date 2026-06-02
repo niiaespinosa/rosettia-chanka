@@ -24,8 +24,9 @@ def translate(text: str, num_beams: int = 5, suppress_apostrophe: bool = True,
     text = (text or "").strip()
     if not text:
         return ""
-    model.to("cuda")
-    enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=256).to("cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=256).to(device)
     gen = dict(forced_bos_token_id=BOS, num_beams=int(num_beams), max_new_tokens=160)
     if block_repeats:
         gen["no_repeat_ngram_size"] = 3
