@@ -64,16 +64,39 @@ constraint of the whole project:
 = What worked — the levers
 
 == Qwen-9B supervised model (v30)
-Our base/teacher model is a fine-tune of *Qwen3.5-9B* (Unsloth; decoder-only, with *minimal*
-native Quechua pretraining). Recipe: a *broad multilingual SFT* stage, then *Chanka SFT* via a
-LoRA chain on a *curated ~1,929-pair* Spanish–Chanka corpus, then merged to 16-bit weights;
-inference uses a chat template ("translate to Chanka Quechua"). A notable finding here:
-*curated small data beat larger noisy data* — a 109k normalized in-domain corpus scored only
-37.9, below the 1,929 curated pairs — which is why, for a decoder-only model with little quy
-pretraining, data curation and decoding mattered more than scale. Result: *40.55* greedy
-(already above the published ceiling), *42.93* with ChrF-MBR dedup decoding. This model is
-reused twice downstream: as the *teacher* for synthetic forward-translation (the next lever)
-and as an *ensemble member*. Its full model card is linked at the end.
+Our base/teacher model, *v30*, is a *two-stage* LoRA fine-tune of `unsloth/Qwen3.5-9B`
+(Unsloth, *16-bit LoRA — no 4-bit quantization*, bf16; decoder-only, with minimal native
+Quechua pretraining), then merged to 16-bit weights. Both stages use LoRA *r = 256, α = 512,
+dropout = 0* over all seven attention/MLP projections (`q,k,v,o,gate,up,down`), optimizer
+`adamw_8bit`, weight-decay 0.01, warmup-ratio 0.05:
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto, auto, auto, auto),
+    align: (left, left, center, center, center, center), stroke: 0.5pt + rgb("#d8dce2"),
+    table.header([*Stage*], [*Data*], [*LR*], [*eff. batch*], [*max-seq*], [*budget*]),
+    [Broad SFT], [~166k spa↔quy (SomosNLP + AmericasNLP)], [1e-4], [64 (16×4)], [256], [→ ckpt-2688],
+    [Chanka SFT #linebreak() (continuation)], [1,929 curated Chanka pairs], [2e-5], [8], [128], [3 ep (ckpt-615)],
+  ),
+  caption: [The v30 two-stage recipe. The Chanka stage continues the broad adapter, then the
+  result (v30a, ckpt-615) is merged to 16-bit (no α-rescaling) → the published model.],
+)
+
+The Chanka corpus (1,929 unique pairs after leakage-filtering against the held-out eval split)
+is 1,042 reviewed judicial-manual pairs + 503 manual-glossary entries + 349 Benito-2018
+dictionary entries + 35 simple terms. Prompting uses a chat template (system *"Eres un traductor
+profesional español-quechua"*, instruction *"Traduce del español al quechua chanka…"*), with
+reasoning disabled and loss computed on the response only. *Result: 40.55 ChrF (w0) greedy*
+(already above the published ceiling), 42.93 with ChrF-MBR dedup decoding.
+
+Two honest notes. *(i)* A compact-mixed self-verification stage and a LoRA-α sweep (carried over
+from a smaller-model lineage) were *planned but NOT included in the shipped/evaluated v30* — the
+SOTA number is the two-stage merge above. *(ii)* Curated small data beat larger noisy data — a
+109k normalized in-domain corpus scored only 37.9, below the 1,929 curated pairs — so for a
+decoder-only model with little Quechua pretraining, curation and decoding mattered more than
+scale. (The in-domain manual eval is inflated because the glossary shares the manual the eval is
+drawn from; the AmericasNLP test is the clean, leakage-guarded number.) v30 is reused as the
+synthetic-data teacher and as an ensemble member; its full model card is linked at the end.
 
 == NLLB-1.3B supervised (BSC-2024 recipe)
 LoRA r256/α512, lr 2e-4 inverse-sqrt. Standalone *39.46* — a strong, architecturally diverse

@@ -41,11 +41,28 @@ candidates with a diverse NLLB-1.3B reaches 44.97.
 
 ## Training
 
-- **Base:** Qwen3.5-9B (Unsloth), via a broad multilingual SFT stage → Chanka SFT
-  on a **curated** 1,929-pair Spanish–Chanka corpus → merged to 16-bit weights.
-- Decoder-only; **minimal native Quechua pretraining** (the main reason curated data
-  + good decoding matter more than scale here).
-- **Zero leakage**: the AmericasNLP 2021 test set was held out throughout.
+A **two-stage 16-bit LoRA** fine-tune of `unsloth/Qwen3.5-9B` (Unsloth; **no 4-bit
+quantization**; bf16; decoder-only, with minimal native Quechua pretraining), then merged
+to 16-bit weights. Both stages: LoRA **r=256, α=512, dropout=0** over all 7 attention/MLP
+projections; `adamw_8bit`, weight-decay 0.01, warmup-ratio 0.05.
+
+| Stage | Data | LR | eff. batch | max-seq | budget |
+|---|---|---|---|---|---|
+| Broad SFT | ~166k spa↔quy (SomosNLP + AmericasNLP) | 1e-4 | 64 (16×4) | 256 | → ckpt-2688 |
+| Chanka SFT (continuation) | 1,929 curated Chanka pairs | 2e-5 | 8 | 128 | 3 epochs (ckpt-615) |
+
+- **Chanka corpus (1,929 pairs):** 1,042 reviewed judicial-manual pairs + 503 manual-glossary
+  entries + 349 Benito-2018 dictionary entries + 35 simple terms (deduped, leakage-filtered
+  against the held-out eval split).
+- **Prompt:** chat template, system *"Eres un traductor profesional español-quechua"*,
+  instruction *"Traduce del español al quechua chanka…"*, reasoning disabled, loss on response only.
+- **Merge:** Unsloth `save_pretrained_merged` (`merged_16bit`, no α-rescaling) of the Chanka
+  adapter (ckpt-615) → this model.
+- **Not shipped here:** a planned compact-mixed self-verification stage and a LoRA-α sweep were
+  *not* part of this evaluated model (the SOTA number is the two-stage merge above).
+- **Zero leakage:** the AmericasNLP 2021 test set was held out throughout (0/1003 overlap verified).
+  Note the *in-domain* manual eval is inflated (glossary shares the manual the eval is drawn from);
+  the AmericasNLP test (40.55) is the clean number.
 
 ## Usage
 
