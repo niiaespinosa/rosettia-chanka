@@ -19,17 +19,20 @@ BAD_WORDS = _bad or None
 
 
 @spaces.GPU(duration=60)
-def translate(text: str) -> str:
+def translate(text: str, num_beams: int = 5, suppress_apostrophe: bool = True,
+              block_repeats: bool = True) -> str:
     text = (text or "").strip()
     if not text:
         return ""
     model.to("cuda")
     enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=256).to("cuda")
+    gen = dict(forced_bos_token_id=BOS, num_beams=int(num_beams), max_new_tokens=160)
+    if block_repeats:
+        gen["no_repeat_ngram_size"] = 3
+    if suppress_apostrophe:
+        gen["bad_words_ids"] = BAD_WORDS
     with torch.no_grad():
-        out = model.generate(
-            **enc, forced_bos_token_id=BOS, num_beams=5, max_new_tokens=160,
-            no_repeat_ngram_size=3, bad_words_ids=BAD_WORDS,
-        )
+        out = model.generate(**enc, **gen)
     return tokenizer.batch_decode(out, skip_special_tokens=True)[0].strip()
 
 
@@ -96,10 +99,19 @@ with gr.Blocks(theme=THEME, css=CSS, title="RosettIA · Español → Quechua Cha
                           show_copy_button=True, interactive=False)
     btn = gr.Button("Traducir  →", variant="primary")
     gr.Examples(EXAMPLES, inputs=inp, label="Ejemplos")
+
+    with gr.Accordion("Advanced decoding options", open=False):
+        beams = gr.Slider(1, 5, value=5, step=1,
+                          label="Beam size — 1 = greedy (fastest) · 5 = best quality (default)")
+        supp = gr.Checkbox(value=True,
+                           label="Suppress apostrophes (Ayacucho/Chanka quy has no glottalization)")
+        norep = gr.Checkbox(value=True, label="Block repeated n-grams (no_repeat_ngram_size = 3)")
+
     with gr.Accordion("About · model, limitations, credits", open=False):
         gr.Markdown(ABOUT)
 
-    btn.click(translate, inp, outp)
-    inp.submit(translate, inp, outp)
+    ins = [inp, beams, supp, norep]
+    btn.click(translate, ins, outp)
+    inp.submit(translate, ins, outp)
 
 demo.queue(max_size=20).launch()
