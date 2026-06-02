@@ -11,7 +11,6 @@ tags:
 - low-resource
 - reinforcement-learning
 - gspo
-- grpo
 - lora
 - peft
 - nllb
@@ -21,43 +20,86 @@ base_model: facebook/nllb-200-1.3B
 library_name: peft
 ---
 
-# rosettia-quy-gspo-nllb13b-lora
+# rosettia-quy — Spanish → Chanka/Ayacucho Quechua (GSPO-NLLB)
 
-**Current SOTA** for Spanish → Chanka/Ayacucho Quechua (`quy_Latn`) on the
-AmericasNLP 2021 benchmark. A **LoRA adapter** for `facebook/nllb-200-1.3B`,
-produced by **GSPO reinforcement learning with a ChrF verifiable reward** on top
-of the synthetic-augmented NLLB-r2 SFT model.
+A **LoRA adapter** for `facebook/nllb-200-1.3B` for **Spanish → Chanka / Ayacucho
+Quechua** (`quy_Latn`), trained with **GSPO reinforcement learning** (Group Sequence
+Policy Optimization) on top of a synthetic-augmented supervised model.
 
-To our knowledge this is the **first application of GSPO (Group Sequence Policy
-Optimization, Zheng et al. 2025) to an encoder-decoder NMT model.**
+To our knowledge this is the **first application of GSPO to an encoder–decoder NMT
+model**. It is the strongest result we are aware of on the AmericasNLP 2021 spa→quy
+benchmark — but please read the **Limitations** section: this is a research-grade
+system, evaluated on a single benchmark with single-reference ChrF and **no
+native-speaker evaluation**.
 
-## Results — AmericasNLP 2021 spa→quy test (1003 lines, ChrF, sacrebleu word_order=0)
+![Comparison](figures/fig1_comparison.png)
+
+## Results — AmericasNLP 2021 spa→quy test
+
+ChrF (`sacrebleu`, `word_order=0`), 1003 sentences, single reference. The test set was
+**never** used for training, tuning, or checkpoint selection.
+
 | System | ChrF (w0) |
-|---|---|
+|---|---:|
+| Sheffield 2023 (NLLB-3.3B, 3-model ensemble) | 34.01 |
 | Helsinki 2021 (prior task winner) | 39.40 |
-| Sheffield 2023 (NLLB-3.3B ensemble) | 34.01 |
-| NLLB-r2 (this adapter's SFT starting point), beam5 | 42.95 |
-| **GSPO-NLLB standalone, beam5 + apostrophe suppression** | **45.49** |
-| GSPO-NLLB + dedup-ChrF-MBR (self) | 46.33 |
-| **GSPO-NLLB ⊕ Qwen-9B (v30) ensemble, dedup-MBR** | **46.44** |
+| Qwen-9B (ours), greedy | 40.55 |
+| NLLB-1.3B (ours), supervised + synthetic | 42.95 |
+| Qwen-9B ⊕ NLLB-1.3B ensemble (ours) | 45.01 |
+| **+ GSPO RL**, single model, beam5 | 45.53 |
+| **+ MBR decoding**, single model | 46.43 |
+| **GSPO multi-checkpoint MBR ensemble (best)** | **46.71** |
 
-GSPO added **+2.54 ChrF** over the SFT model and the system is **+5.89 over our
-own Qwen-9B greedy baseline (40.55)** and well clear of all published systems.
+GSPO adds **+2.6 ChrF** over the supervised model, and the best single **1.3B** model
+(46.43) matches our previous, much larger **9B + 1.3B** ensemble — a simpler, smaller
+system at equal quality.
+
+> **A note on comparability.** Many shared-task papers report **ChrF++** (`word_order=2`),
+> which typically reads ~2–3 points higher than the `word_order=0` ChrF used here (e.g.
+> BSC-2024, the 2024 task winner, reported 38.21 ChrF++). Cross-metric comparisons should
+> be made with care; all of our numbers above are `word_order=0`.
+
+## How GSPO helped
+
+![GSPO curve](figures/fig2_gspo_curve.png)
+
+Reward = sentence-ChrF against **held-out, unseen** Ayacucho references (deduplicated
+against the model's exact training corpus). Validation ChrF climbs, peaks, then declines
+(over-optimization); we **select the peak checkpoint on validation** and run a **single**
+test evaluation. The test set is never used for selection.
+
+## Quality beyond the surface metric
+
+ChrF is a single-reference surface metric and saturates. To check the RL gains are *real*
+quality (not metric-gaming), we score several automatic, speaker-free axes:
+
+![Scorecard](figures/fig3_scorecard.png)
+
+| Axis | NLLB-1.3B (pre-RL) | + GSPO | direction |
+|---|---:|---:|---|
+| ChrF (w0) | 43.17 | 45.53 | higher better |
+| Adequacy (round-trip quy→spa vs source) | 48.28 | 52.86 | higher better |
+| Spanish-leakage (% sentences) | 3.39 | 2.69 | lower better |
+| Length miscalibration (mean \|len ratio−1\|) | 0.201 | 0.175 | lower better |
+
+**GSPO improved adequacy (+4.6) by more than it improved ChrF (+2.4)**, and reduced
+leakage and length error — i.e. the gains are multi-axis quality, not surface gaming.
+(These are automatic proxies; no human judgments exist for this language pair.)
 
 ## Training
-- **Base / SFT:** NLLB-200-1.3B → LoRA (BSC-2024 recipe) → +198k synthetic
-  (v30-forward-translated) → **NLLB-r2** (42.95). This adapter = NLLB-r2 continued
-  via GSPO.
+
+- **Base / SFT:** NLLB-200-1.3B → LoRA (BSC-2024 recipe, r256/α512) → + ~198k synthetic
+  forward-translated pairs → supervised model (42.95).
 - **RL:** GSPO — sequence-level (length-normalized) importance ratio + group-relative
-  advantage + KL-to-frozen-ref. **Reward = sentence-ChrF vs real references.**
-- **Data:** held-out Ayacucho/Chanka pairs the SFT model never trained on (deduped
-  against its exact 323k training corpus AND the test set). Dialect-filtered to
-  Ayacucho only. Held-out reward climbed 42→51; generalized to the test (+2.54).
-- **Infra:** rollouts via an in-process vLLM engine (we implemented NLLB support for
-  vLLM) with TRL-style per-step weight sync (~3× faster than HF generate).
-- **Rigor:** test never trained/tuned/selected on; separate val split for selection.
+  advantage + KL-to-frozen-reference. Reward = sentence-ChrF vs unseen Ayacucho refs.
+  Group size 16. Rollouts via an in-process vLLM engine (we implemented NLLB/M2M-100
+  support for vLLM) with per-step weight sync.
+- **Data hygiene:** RL data deduplicated against the model's exact training corpus **and**
+  the test set; dialect-filtered to Ayacucho/Chanka; separate validation split for
+  checkpoint selection; one final test evaluation.
 
 ## Usage
+
 ```python
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
@@ -71,10 +113,21 @@ enc = tok("No sé por qué sucedió eso.", return_tensors="pt").to("cuda")
 out = m.generate(**enc, forced_bos_token_id=bos, num_beams=5, max_new_tokens=128)
 print(tok.batch_decode(out, skip_special_tokens=True)[0])  # -> Manam yachanichu imarayku chay pasarqa.
 ```
-For best quality use ChrF-MBR decoding (sample ~64, dedup, pick the ChrF-consensus)
-and/or ensemble with the Qwen model `Thermostatic/rosettia-quy-v30b-9b-merged`.
 
-## Intended use & limitations
-Research-grade MT for an under-served low-resource language. Validated on a single
-benchmark with single-reference ChrF; native-speaker / multi-reference evaluation is
-future work. Review outputs with speakers before consequential use.
+The root adapter is the validation-selected single model (standalone 45.53 / self-MBR
+46.43). For the best result (46.71), sample candidates from this adapter **and** the
+`checkpoint-800/` adapter, deduplicate, and pick the ChrF-MBR consensus. Apostrophe
+suppression at decode is a small free gain (Ayacucho quy has no glottalization).
+
+## Limitations & intended use
+
+- **Research-grade**, validated on a **single benchmark** with **single-reference ChrF**.
+  ChrF ~46 means roughly half the character n-grams match one reference — useful as a
+  draft, **not** production quality. Review with speakers before consequential use.
+- **No native-speaker / multi-reference evaluation** was performed (no Chanka experts were
+  available); all "quality" axes here are automatic proxies.
+- Known residual issues: numbers are often kept as digits rather than spelled out in
+  Quechua; occasional Spanish loanword spelling; rare repetition (mitigated with
+  `no_repeat_ngram_size=3` at decode).
+- Dialect: **Ayacucho/Chanka** (`quy`). Not validated for Cuzco (`quz`) or Central varieties.
+- License `cc-by-nc-4.0`; non-commercial, consistent with the underlying data sources.
